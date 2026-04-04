@@ -27,8 +27,4 @@ pub mod test_support {
     pub fn print_method_decl(m: &MethodDecl) -> String {
         crate::printer::Printer::method_decl(m)
     }
-
-    pub fn gofmt(src: &str) -> String {
-        crate::printer::Printer::gofmt(src)
-    }
 }

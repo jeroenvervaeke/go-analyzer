@@ -2,42 +2,56 @@ use go_model::*;
 
 pub(crate) struct Printer;
 
-impl Printer {
-    // --- Type Expressions ---
+fn indent_str(depth: usize) -> String {
+    "\t".repeat(depth)
+}
 
+impl Printer {
     pub fn type_expr(t: &TypeExpr) -> String {
+        Self::type_expr_at(t, 0)
+    }
+
+    fn type_expr_at(t: &TypeExpr, indent: usize) -> String {
         match t {
             TypeExpr::Named(id) => id.name.clone(),
             TypeExpr::Qualified { package, name } => {
                 format!("{}.{}", package.name, name.name)
             }
-            TypeExpr::Pointer(inner) => format!("*{}", Self::type_expr(inner)),
+            TypeExpr::Pointer(inner) => format!("*{}", Self::type_expr_at(inner, indent)),
             TypeExpr::Array { len, elem } => {
-                format!("[{}]{}", Self::expr(len), Self::type_expr(elem))
+                format!("[{}]{}", Self::expr(len), Self::type_expr_at(elem, indent))
             }
-            TypeExpr::Slice(elem) => format!("[]{}", Self::type_expr(elem)),
+            TypeExpr::Slice(elem) => format!("[]{}", Self::type_expr_at(elem, indent)),
             TypeExpr::Map { key, value } => {
-                format!("map[{}]{}", Self::type_expr(key), Self::type_expr(value))
+                format!(
+                    "map[{}]{}",
+                    Self::type_expr_at(key, indent),
+                    Self::type_expr_at(value, indent)
+                )
             }
             TypeExpr::Channel { direction, elem } => {
-                let elem_str = Self::type_expr(elem);
+                let elem_str = Self::type_expr_at(elem, indent);
                 match direction {
                     ChanDir::Both => format!("chan {elem_str}"),
                     ChanDir::Recv => format!("<-chan {elem_str}"),
                     ChanDir::Send => format!("chan<- {elem_str}"),
                 }
             }
-            TypeExpr::Func(ft) => Self::func_type(ft),
-            TypeExpr::Interface(it) => Self::interface_type(it),
-            TypeExpr::Struct(st) => Self::struct_type(st),
+            TypeExpr::Func(ft) => Self::func_type_at(ft, indent),
+            TypeExpr::Interface(it) => Self::interface_type_at(it, indent),
+            TypeExpr::Struct(st) => Self::struct_type_at(st, indent),
             TypeExpr::Generic { base, args } => {
-                let args_str: Vec<_> = args.iter().map(Self::type_expr).collect();
-                format!("{}[{}]", Self::type_expr(base), args_str.join(", "))
+                let args_str: Vec<_> = args.iter().map(|a| Self::type_expr_at(a, indent)).collect();
+                format!(
+                    "{}[{}]",
+                    Self::type_expr_at(base, indent),
+                    args_str.join(", ")
+                )
             }
         }
     }
 
-    fn func_type(ft: &FuncType) -> String {
+    fn func_type_at(ft: &FuncType, indent: usize) -> String {
         let mut s = String::from("func");
         if !ft.type_params.is_empty() {
             s.push('[');
@@ -45,9 +59,9 @@ impl Printer {
             s.push(']');
         }
         s.push('(');
-        s.push_str(&Self::params(&ft.params));
+        s.push_str(&Self::params_at(&ft.params, indent));
         s.push(')');
-        Self::append_results(&mut s, &ft.results);
+        Self::append_results_at(&mut s, &ft.results, indent);
         s
     }
 
@@ -62,6 +76,10 @@ impl Printer {
     }
 
     fn params(params: &[ParamDecl]) -> String {
+        Self::params_at(params, 0)
+    }
+
+    fn params_at(params: &[ParamDecl], indent: usize) -> String {
         params
             .iter()
             .map(|p| {
@@ -74,7 +92,7 @@ impl Printer {
                 if p.variadic {
                     s.push_str("...");
                 }
-                s.push_str(&Self::type_expr(&p.ty));
+                s.push_str(&Self::type_expr_at(&p.ty, indent));
                 s
             })
             .collect::<Vec<_>>()
@@ -82,40 +100,45 @@ impl Printer {
     }
 
     fn append_results(s: &mut String, results: &[ParamDecl]) {
+        Self::append_results_at(s, results, 0);
+    }
+
+    fn append_results_at(s: &mut String, results: &[ParamDecl], indent: usize) {
         if results.is_empty() {
             return;
         }
         // Single unnamed result — no parens needed
         if results.len() == 1 && results[0].names.is_empty() {
             s.push(' ');
-            s.push_str(&Self::type_expr(&results[0].ty));
+            s.push_str(&Self::type_expr_at(&results[0].ty, indent));
             return;
         }
         s.push_str(" (");
-        s.push_str(&Self::params(results));
+        s.push_str(&Self::params_at(results, indent));
         s.push(')');
     }
 
-    fn struct_type(st: &StructType) -> String {
+    fn struct_type_at(st: &StructType, indent: usize) -> String {
         if st.fields.is_empty() {
             return "struct{}".to_owned();
         }
+        let inner = indent + 1;
         let mut s = String::from("struct {\n");
         for f in &st.fields {
-            s.push('\t');
+            s.push_str(&indent_str(inner));
             match f {
                 FieldDecl::Named { names, ty, tag, .. } => {
                     let names_str: Vec<_> = names.iter().map(|n| n.name.as_str()).collect();
                     s.push_str(&names_str.join(", "));
                     s.push(' ');
-                    s.push_str(&Self::type_expr(ty));
+                    s.push_str(&Self::type_expr_at(ty, inner));
                     if let Some(tag) = tag {
                         s.push(' ');
                         s.push_str(&tag.raw);
                     }
                 }
                 FieldDecl::Embedded { ty, tag, .. } => {
-                    s.push_str(&Self::type_expr(ty));
+                    s.push_str(&Self::type_expr_at(ty, inner));
                     if let Some(tag) = tag {
                         s.push(' ');
                         s.push_str(&tag.raw);
@@ -124,24 +147,26 @@ impl Printer {
             }
             s.push('\n');
         }
+        s.push_str(&indent_str(indent));
         s.push('}');
         s
     }
 
-    fn interface_type(it: &InterfaceType) -> String {
+    fn interface_type_at(it: &InterfaceType, indent: usize) -> String {
         if it.elements.is_empty() {
             return "interface{}".to_owned();
         }
+        let inner = indent + 1;
         let mut s = String::from("interface {\n");
         for elem in &it.elements {
-            s.push('\t');
+            s.push_str(&indent_str(inner));
             match elem {
                 InterfaceElem::Method { name, ty, .. } => {
                     s.push_str(&name.name);
                     s.push('(');
-                    s.push_str(&Self::params(&ty.params));
+                    s.push_str(&Self::params_at(&ty.params, inner));
                     s.push(')');
-                    Self::append_results(&mut s, &ty.results);
+                    Self::append_results_at(&mut s, &ty.results, inner);
                 }
                 InterfaceElem::TypeTerm(tt) => {
                     let terms: Vec<_> = tt
@@ -152,25 +177,28 @@ impl Printer {
                             if t.tilde {
                                 ts.push('~');
                             }
-                            ts.push_str(&Self::type_expr(&t.ty));
+                            ts.push_str(&Self::type_expr_at(&t.ty, inner));
                             ts
                         })
                         .collect();
                     s.push_str(&terms.join(" | "));
                 }
                 InterfaceElem::Embedded(ty) => {
-                    s.push_str(&Self::type_expr(ty));
+                    s.push_str(&Self::type_expr_at(ty, inner));
                 }
             }
             s.push('\n');
         }
+        s.push_str(&indent_str(indent));
         s.push('}');
         s
     }
 
-    // --- Expressions ---
-
     pub fn expr(e: &Expr) -> String {
+        Self::expr_at(e, 0)
+    }
+
+    fn expr_at(e: &Expr, indent: usize) -> String {
         match e {
             Expr::Ident(id) => id.name.clone(),
             Expr::Qualified { package, name, .. } => format!("{}.{}", package.name, name.name),
@@ -184,9 +212,9 @@ impl Printer {
             Expr::False(_) => "false".to_owned(),
             Expr::Nil(_) => "nil".to_owned(),
             Expr::Iota(_) => "iota".to_owned(),
-            Expr::Paren(inner, _) => format!("({})", Self::expr(inner)),
+            Expr::Paren(inner, _) => format!("({})", Self::expr_at(inner, indent)),
             Expr::Composite { ty, elems, .. } => {
-                let ty_str = Self::type_expr(ty);
+                let ty_str = Self::type_expr_at(ty, indent);
                 if elems.is_empty() {
                     return format!("{ty_str}{{}}");
                 }
@@ -194,18 +222,22 @@ impl Printer {
                     .iter()
                     .map(|e| {
                         if let Some(key) = &e.key {
-                            format!("{}: {}", Self::expr(key), Self::expr(&e.value))
+                            format!(
+                                "{}: {}",
+                                Self::expr_at(key, indent),
+                                Self::expr_at(&e.value, indent)
+                            )
                         } else {
-                            Self::expr(&e.value)
+                            Self::expr_at(&e.value, indent)
                         }
                     })
                     .collect();
                 format!("{ty_str}{{{}}}", elems_str.join(", "))
             }
             Expr::FuncLit { ty, body, .. } => {
-                let mut s = Self::func_type(ty);
+                let mut s = Self::func_type_at(ty, indent);
                 s.push(' ');
-                s.push_str(&Self::block(body));
+                s.push_str(&Self::block_at(body, indent));
                 s
             }
             Expr::Call {
@@ -215,15 +247,18 @@ impl Printer {
                 ellipsis,
                 ..
             } => {
-                let mut s = Self::expr_prec(func, 100);
+                let mut s = Self::expr_prec_at(func, 100, indent);
                 if !type_args.is_empty() {
-                    let ta: Vec<_> = type_args.iter().map(Self::type_expr).collect();
+                    let ta: Vec<_> = type_args
+                        .iter()
+                        .map(|a| Self::type_expr_at(a, indent))
+                        .collect();
                     s.push('[');
                     s.push_str(&ta.join(", "));
                     s.push(']');
                 }
                 s.push('(');
-                let args_str: Vec<_> = args.iter().map(Self::expr).collect();
+                let args_str: Vec<_> = args.iter().map(|a| Self::expr_at(a, indent)).collect();
                 s.push_str(&args_str.join(", "));
                 if *ellipsis {
                     s.push_str("...");
@@ -232,10 +267,18 @@ impl Printer {
                 s
             }
             Expr::Selector { operand, field, .. } => {
-                format!("{}.{}", Self::expr_prec(operand, 100), field.name)
+                format!(
+                    "{}.{}",
+                    Self::expr_prec_at(operand, 100, indent),
+                    field.name
+                )
             }
             Expr::Index { operand, index, .. } => {
-                format!("{}[{}]", Self::expr_prec(operand, 100), Self::expr(index))
+                format!(
+                    "{}[{}]",
+                    Self::expr_prec_at(operand, 100, indent),
+                    Self::expr_at(index, indent)
+                )
             }
             Expr::Slice {
                 operand,
@@ -244,11 +287,18 @@ impl Printer {
                 max,
                 ..
             } => {
-                let op_str = Self::expr_prec(operand, 100);
-                let low_str = low.as_ref().map_or(String::new(), |e| Self::expr(e));
-                let high_str = high.as_ref().map_or(String::new(), |e| Self::expr(e));
+                let op_str = Self::expr_prec_at(operand, 100, indent);
+                let low_str = low
+                    .as_ref()
+                    .map_or(String::new(), |e| Self::expr_at(e, indent));
+                let high_str = high
+                    .as_ref()
+                    .map_or(String::new(), |e| Self::expr_at(e, indent));
                 if let Some(max) = max {
-                    format!("{op_str}[{low_str}:{high_str}:{}]", Self::expr(max))
+                    format!(
+                        "{op_str}[{low_str}:{high_str}:{}]",
+                        Self::expr_at(max, indent)
+                    )
                 } else {
                     format!("{op_str}[{low_str}:{high_str}]")
                 }
@@ -256,8 +306,8 @@ impl Printer {
             Expr::TypeAssert { operand, ty, .. } => {
                 format!(
                     "{}.({})",
-                    Self::expr_prec(operand, 100),
-                    Self::type_expr(ty)
+                    Self::expr_prec_at(operand, 100, indent),
+                    Self::type_expr_at(ty, indent)
                 )
             }
             Expr::Unary { op, operand, .. } => {
@@ -270,30 +320,33 @@ impl Printer {
                     UnaryOp::Recv => "<-",
                     UnaryOp::BitNot => "^",
                 };
-                format!("{op_str}{}", Self::expr(operand))
+                format!("{op_str}{}", Self::expr_at(operand, indent))
             }
             Expr::Binary {
                 op, left, right, ..
             } => {
                 let op_str = Self::binary_op_str(*op);
-                let left_str = Self::expr_maybe_parens(left, *op, true);
-                let right_str = Self::expr_maybe_parens(right, *op, false);
+                let left_str = Self::expr_maybe_parens_at(left, *op, true, indent);
+                let right_str = Self::expr_maybe_parens_at(right, *op, false, indent);
                 format!("{left_str} {op_str} {right_str}")
             }
         }
     }
 
-    /// Print an expression, wrapping in parens if it's a binary with lower precedence
-    /// than the given parent context.
-    fn expr_prec(e: &Expr, _parent_prec: u8) -> String {
-        Self::expr(e)
+    fn expr_prec_at(e: &Expr, _parent_prec: u8, indent: usize) -> String {
+        Self::expr_at(e, indent)
     }
 
-    fn expr_maybe_parens(child: &Expr, parent_op: BinaryOp, is_left: bool) -> String {
+    fn expr_maybe_parens_at(
+        child: &Expr,
+        parent_op: BinaryOp,
+        is_left: bool,
+        indent: usize,
+    ) -> String {
         if Self::needs_parens(parent_op, child, is_left) {
-            format!("({})", Self::expr(child))
+            format!("({})", Self::expr_at(child, indent))
         } else {
-            Self::expr(child)
+            Self::expr_at(child, indent)
         }
     }
 
@@ -342,36 +395,45 @@ impl Printer {
         }
     }
 
-    // --- Statements ---
-
+    // Part of the printer's public API surface; currently only exercised
+    // by tests but intentionally kept for future callers.
+    #[allow(dead_code)]
     pub fn stmt(s: &Stmt) -> String {
+        Self::stmt_at(s, 0)
+    }
+
+    fn stmt_at(s: &Stmt, indent: usize) -> String {
         match s {
-            Stmt::Empty(_) => "".to_owned(),
-            Stmt::Block(b) => Self::block(b),
-            Stmt::Expr(e, _) => Self::expr(e),
+            Stmt::Empty(_) => String::new(),
+            Stmt::Block(b) => Self::block_at(b, indent),
+            Stmt::Expr(e, _) => Self::expr_at(e, indent),
             Stmt::Assign { lhs, op, rhs, .. } => {
-                let lhs_str: Vec<_> = lhs.iter().map(Self::expr).collect();
-                let rhs_str: Vec<_> = rhs.iter().map(Self::expr).collect();
+                let lhs_str: Vec<_> = lhs.iter().map(|e| Self::expr_at(e, indent)).collect();
+                let rhs_str: Vec<_> = rhs.iter().map(|e| Self::expr_at(e, indent)).collect();
                 let op_str = Self::assign_op_str(*op);
                 format!("{} {} {}", lhs_str.join(", "), op_str, rhs_str.join(", "))
             }
             Stmt::ShortVarDecl { names, values, .. } => {
                 let names_str: Vec<_> = names.iter().map(|n| n.name.as_str()).collect();
-                let values_str: Vec<_> = values.iter().map(Self::expr).collect();
+                let values_str: Vec<_> = values.iter().map(|e| Self::expr_at(e, indent)).collect();
                 format!("{} := {}", names_str.join(", "), values_str.join(", "))
             }
-            Stmt::VarDecl(vs, _) => Self::var_spec(vs),
-            Stmt::ConstDecl(cs, _) => Self::const_spec(cs),
-            Stmt::Inc(e, _) => format!("{}++", Self::expr(e)),
-            Stmt::Dec(e, _) => format!("{}--", Self::expr(e)),
+            Stmt::VarDecl(vs, _) => Self::var_spec_at(vs, indent),
+            Stmt::ConstDecl(cs, _) => Self::const_spec_at(cs, indent),
+            Stmt::Inc(e, _) => format!("{}++", Self::expr_at(e, indent)),
+            Stmt::Dec(e, _) => format!("{}--", Self::expr_at(e, indent)),
             Stmt::Send { channel, value, .. } => {
-                format!("{} <- {}", Self::expr(channel), Self::expr(value))
+                format!(
+                    "{} <- {}",
+                    Self::expr_at(channel, indent),
+                    Self::expr_at(value, indent)
+                )
             }
             Stmt::Return { values, .. } => {
                 if values.is_empty() {
                     "return".to_owned()
                 } else {
-                    let vals: Vec<_> = values.iter().map(Self::expr).collect();
+                    let vals: Vec<_> = values.iter().map(|e| Self::expr_at(e, indent)).collect();
                     format!("return {}", vals.join(", "))
                 }
             }
@@ -382,19 +444,19 @@ impl Printer {
                 else_,
                 ..
             } => {
-                let mut s = String::from("if ");
+                let mut out = String::from("if ");
                 if let Some(init) = init {
-                    s.push_str(&Self::stmt(init));
-                    s.push_str("; ");
+                    out.push_str(&Self::stmt_at(init, indent));
+                    out.push_str("; ");
                 }
-                s.push_str(&Self::expr(cond));
-                s.push(' ');
-                s.push_str(&Self::block(body));
+                out.push_str(&Self::expr_at(cond, indent));
+                out.push(' ');
+                out.push_str(&Self::block_at(body, indent));
                 if let Some(else_) = else_ {
-                    s.push_str(" else ");
-                    s.push_str(&Self::stmt(else_));
+                    out.push_str(" else ");
+                    out.push_str(&Self::stmt_at(else_, indent));
                 }
-                s
+                out
             }
             Stmt::For {
                 init,
@@ -403,27 +465,26 @@ impl Printer {
                 body,
                 ..
             } => {
-                let mut s = String::from("for ");
+                let mut out = String::from("for ");
                 if init.is_some() || post.is_some() {
-                    // C-style for
                     if let Some(init) = init {
-                        s.push_str(&Self::stmt(init));
+                        out.push_str(&Self::stmt_at(init, indent));
                     }
-                    s.push_str("; ");
+                    out.push_str("; ");
                     if let Some(cond) = cond {
-                        s.push_str(&Self::expr(cond));
+                        out.push_str(&Self::expr_at(cond, indent));
                     }
-                    s.push_str("; ");
+                    out.push_str("; ");
                     if let Some(post) = post {
-                        s.push_str(&Self::stmt(post));
+                        out.push_str(&Self::stmt_at(post, indent));
                     }
-                    s.push(' ');
+                    out.push(' ');
                 } else if let Some(cond) = cond {
-                    s.push_str(&Self::expr(cond));
-                    s.push(' ');
+                    out.push_str(&Self::expr_at(cond, indent));
+                    out.push(' ');
                 }
-                s.push_str(&Self::block(body));
-                s
+                out.push_str(&Self::block_at(body, indent));
+                out
             }
             Stmt::ForRange {
                 key,
@@ -433,57 +494,63 @@ impl Printer {
                 body,
                 ..
             } => {
-                let mut s = String::from("for ");
+                let mut out = String::from("for ");
                 let has_vars = key.is_some() || value.is_some();
                 if has_vars {
                     if let Some(key) = key {
-                        s.push_str(&Self::expr(key));
+                        out.push_str(&Self::expr_at(key, indent));
                     } else {
-                        s.push('_');
+                        out.push('_');
                     }
                     if let Some(value) = value {
-                        s.push_str(", ");
-                        s.push_str(&Self::expr(value));
+                        out.push_str(", ");
+                        out.push_str(&Self::expr_at(value, indent));
                     }
                     match assign {
-                        RangeAssign::Define => s.push_str(" := "),
-                        RangeAssign::Assign => s.push_str(" = "),
+                        RangeAssign::Define => out.push_str(" := "),
+                        RangeAssign::Assign => out.push_str(" = "),
                     }
                 }
-                s.push_str("range ");
-                s.push_str(&Self::expr(iterable));
-                s.push(' ');
-                s.push_str(&Self::block(body));
-                s
+                out.push_str("range ");
+                out.push_str(&Self::expr_at(iterable, indent));
+                out.push(' ');
+                out.push_str(&Self::block_at(body, indent));
+                out
             }
             Stmt::Switch {
                 init, tag, cases, ..
             } => {
-                let mut s = String::from("switch ");
+                let mut out = String::from("switch ");
                 if let Some(init) = init {
-                    s.push_str(&Self::stmt(init));
-                    s.push_str("; ");
+                    out.push_str(&Self::stmt_at(init, indent));
+                    out.push_str("; ");
                 }
                 if let Some(tag) = tag {
-                    s.push_str(&Self::expr(tag));
-                    s.push(' ');
+                    out.push_str(&Self::expr_at(tag, indent));
+                    out.push(' ');
                 }
-                s.push_str("{\n");
+                out.push_str("{\n");
                 for case in cases {
+                    out.push_str(&indent_str(indent));
                     if case.exprs.is_empty() {
-                        s.push_str("default:\n");
+                        out.push_str("default:\n");
                     } else {
-                        let exprs: Vec<_> = case.exprs.iter().map(Self::expr).collect();
-                        s.push_str(&format!("case {}:\n", exprs.join(", ")));
+                        let exprs: Vec<_> = case
+                            .exprs
+                            .iter()
+                            .map(|e| Self::expr_at(e, indent))
+                            .collect();
+                        out.push_str(&format!("case {}:\n", exprs.join(", ")));
                     }
                     for stmt in &case.body {
-                        s.push('\t');
-                        s.push_str(&Self::stmt(stmt));
-                        s.push('\n');
+                        out.push_str(&indent_str(indent + 1));
+                        out.push_str(&Self::stmt_at(stmt, indent + 1));
+                        out.push('\n');
                     }
                 }
-                s.push('}');
-                s
+                out.push_str(&indent_str(indent));
+                out.push('}');
+                out
             }
             Stmt::TypeSwitch {
                 init,
@@ -491,72 +558,82 @@ impl Printer {
                 cases,
                 ..
             } => {
-                let mut s = String::from("switch ");
+                let mut out = String::from("switch ");
                 if let Some(init) = init {
-                    s.push_str(&Self::stmt(init));
-                    s.push_str("; ");
+                    out.push_str(&Self::stmt_at(init, indent));
+                    out.push_str("; ");
                 }
                 if let Some(name) = &assign.name {
-                    s.push_str(&name.name);
-                    s.push_str(" := ");
+                    out.push_str(&name.name);
+                    out.push_str(" := ");
                 }
-                s.push_str(&Self::expr(&assign.expr));
-                s.push_str(".(type) {\n");
+                out.push_str(&Self::expr_at(&assign.expr, indent));
+                out.push_str(".(type) {\n");
                 for case in cases {
+                    out.push_str(&indent_str(indent));
                     if case.types.is_empty() {
-                        s.push_str("default:\n");
+                        out.push_str("default:\n");
                     } else {
-                        let types: Vec<_> = case.types.iter().map(Self::type_expr).collect();
-                        s.push_str(&format!("case {}:\n", types.join(", ")));
+                        let types: Vec<_> = case
+                            .types
+                            .iter()
+                            .map(|t| Self::type_expr_at(t, indent))
+                            .collect();
+                        out.push_str(&format!("case {}:\n", types.join(", ")));
                     }
                     for stmt in &case.body {
-                        s.push('\t');
-                        s.push_str(&Self::stmt(stmt));
-                        s.push('\n');
+                        out.push_str(&indent_str(indent + 1));
+                        out.push_str(&Self::stmt_at(stmt, indent + 1));
+                        out.push('\n');
                     }
                 }
-                s.push('}');
-                s
+                out.push_str(&indent_str(indent));
+                out.push('}');
+                out
             }
             Stmt::Select { cases, .. } => {
-                let mut s = String::from("select {\n");
+                let mut out = String::from("select {\n");
                 for case in cases {
                     match case {
                         CommCase::Send { stmt, body, .. } => {
-                            s.push_str(&format!("case {}:\n", Self::stmt(stmt)));
+                            out.push_str(&indent_str(indent));
+                            out.push_str(&format!("case {}:\n", Self::stmt_at(stmt, indent)));
                             for st in body {
-                                s.push('\t');
-                                s.push_str(&Self::stmt(st));
-                                s.push('\n');
+                                out.push_str(&indent_str(indent + 1));
+                                out.push_str(&Self::stmt_at(st, indent + 1));
+                                out.push('\n');
                             }
                         }
                         CommCase::Recv { stmt, body, .. } => {
+                            out.push_str(&indent_str(indent));
                             if let Some(stmt) = stmt {
-                                s.push_str(&format!("case {}:\n", Self::stmt(stmt)));
+                                out.push_str(&format!("case {}:\n", Self::stmt_at(stmt, indent)));
                             } else {
-                                s.push_str("case:\n");
+                                out.push_str("case:\n");
                             }
                             for st in body {
-                                s.push('\t');
-                                s.push_str(&Self::stmt(st));
-                                s.push('\n');
+                                out.push_str(&indent_str(indent + 1));
+                                out.push_str(&Self::stmt_at(st, indent + 1));
+                                out.push('\n');
                             }
                         }
                         CommCase::Default { body, .. } => {
-                            s.push_str("default:\n");
+                            out.push_str(&indent_str(indent));
+                            out.push_str("default:\n");
                             for st in body {
-                                s.push('\t');
-                                s.push_str(&Self::stmt(st));
-                                s.push('\n');
+                                out.push_str(&indent_str(indent + 1));
+                                out.push_str(&Self::stmt_at(st, indent + 1));
+                                out.push('\n');
                             }
                         }
                     }
                 }
-                s.push('}');
-                s
+                out.push_str(&indent_str(indent));
+                out.push('}');
+                out
             }
-            Stmt::Go(e, _) => format!("go {}", Self::expr(e)),
-            Stmt::Defer(e, _) => format!("defer {}", Self::expr(e)),
+            Stmt::Go(e, _) => format!("go {}", Self::expr_at(e, indent)),
+            Stmt::Defer(e, _) => format!("defer {}", Self::expr_at(e, indent)),
             Stmt::Break(label, _) => {
                 if let Some(l) = label {
                     format!("break {}", l.name)
@@ -574,36 +651,41 @@ impl Printer {
             Stmt::Goto(label, _) => format!("goto {}", label.name),
             Stmt::Fallthrough(_) => "fallthrough".to_owned(),
             Stmt::Labeled { label, body, .. } => {
-                format!("{}:\n{}", label.name, Self::stmt(body))
+                format!(
+                    "{}:\n{}{}",
+                    label.name,
+                    indent_str(indent),
+                    Self::stmt_at(body, indent)
+                )
             }
-            Stmt::TypeDecl(ts, _) => format!("type {}", Self::type_spec_inner(ts)),
+            Stmt::TypeDecl(ts, _) => format!("type {}", Self::type_spec_inner_at(ts, indent)),
         }
     }
 
-    fn var_spec(vs: &VarSpec) -> String {
+    fn var_spec_at(vs: &VarSpec, indent: usize) -> String {
         let names: Vec<_> = vs.names.iter().map(|n| n.name.as_str()).collect();
         let mut s = format!("var {}", names.join(", "));
         if let Some(ty) = &vs.ty {
             s.push(' ');
-            s.push_str(&Self::type_expr(ty));
+            s.push_str(&Self::type_expr_at(ty, indent));
         }
         if !vs.values.is_empty() {
-            let vals: Vec<_> = vs.values.iter().map(Self::expr).collect();
+            let vals: Vec<_> = vs.values.iter().map(|e| Self::expr_at(e, indent)).collect();
             s.push_str(" = ");
             s.push_str(&vals.join(", "));
         }
         s
     }
 
-    fn const_spec(cs: &ConstSpec) -> String {
+    fn const_spec_at(cs: &ConstSpec, indent: usize) -> String {
         let names: Vec<_> = cs.names.iter().map(|n| n.name.as_str()).collect();
         let mut s = format!("const {}", names.join(", "));
         if let Some(ty) = &cs.ty {
             s.push(' ');
-            s.push_str(&Self::type_expr(ty));
+            s.push_str(&Self::type_expr_at(ty, indent));
         }
         if !cs.values.is_empty() {
-            let vals: Vec<_> = cs.values.iter().map(Self::expr).collect();
+            let vals: Vec<_> = cs.values.iter().map(|e| Self::expr_at(e, indent)).collect();
             s.push_str(" = ");
             s.push_str(&vals.join(", "));
         }
@@ -627,21 +709,21 @@ impl Printer {
         }
     }
 
-    fn block(b: &Block) -> String {
+    fn block_at(b: &Block, indent: usize) -> String {
         if b.stmts.is_empty() {
             return "{}".to_owned();
         }
+        let inner = indent + 1;
         let mut s = String::from("{\n");
         for stmt in &b.stmts {
-            s.push('\t');
-            s.push_str(&Self::stmt(stmt));
+            s.push_str(&indent_str(inner));
+            s.push_str(&Self::stmt_at(stmt, inner));
             s.push('\n');
         }
+        s.push_str(&indent_str(indent));
         s.push('}');
         s
     }
-
-    // --- Declarations ---
 
     pub fn func_decl(f: &FuncDecl) -> String {
         let mut s = String::from("func ");
@@ -657,7 +739,7 @@ impl Printer {
         Self::append_results(&mut s, &f.ty.results);
         if let Some(body) = &f.body {
             s.push(' ');
-            s.push_str(&Self::block(body));
+            s.push_str(&Self::block_at(body, 0));
         }
         s
     }
@@ -684,17 +766,17 @@ impl Printer {
         Self::append_results(&mut s, &m.ty.results);
         if let Some(body) = &m.body {
             s.push(' ');
-            s.push_str(&Self::block(body));
+            s.push_str(&Self::block_at(body, 0));
         }
         s
     }
 
     #[cfg(test)]
     pub fn type_spec(t: &TypeSpec) -> String {
-        format!("type {}", Self::type_spec_inner(t))
+        format!("type {}", Self::type_spec_inner_at(t, 0))
     }
 
-    fn type_spec_inner(t: &TypeSpec) -> String {
+    fn type_spec_inner_at(t: &TypeSpec, indent: usize) -> String {
         match t {
             TypeSpec::Alias {
                 name,
@@ -709,7 +791,7 @@ impl Printer {
                     s.push(']');
                 }
                 s.push_str(" = ");
-                s.push_str(&Self::type_expr(ty));
+                s.push_str(&Self::type_expr_at(ty, indent));
                 s
             }
             TypeSpec::Def {
@@ -725,32 +807,9 @@ impl Printer {
                     s.push(']');
                 }
                 s.push(' ');
-                s.push_str(&Self::type_expr(ty));
+                s.push_str(&Self::type_expr_at(ty, indent));
                 s
             }
-        }
-    }
-
-    pub fn gofmt(src: &str) -> String {
-        use std::io::Write;
-        use std::process::Command;
-        let mut child = match Command::new("gofmt")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-        {
-            Ok(c) => c,
-            Err(_) => return src.to_owned(),
-        };
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(src.as_bytes());
-        }
-        match child.wait_with_output() {
-            Ok(output) if output.status.success() => {
-                String::from_utf8(output.stdout).unwrap_or_else(|_| src.to_owned())
-            }
-            _ => src.to_owned(),
         }
     }
 }

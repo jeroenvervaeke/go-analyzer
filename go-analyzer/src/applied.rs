@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::printer::Printer;
 use crate::repo::Repo;
 
 pub struct Applied<'repo> {
@@ -50,19 +49,13 @@ impl<'repo> Applied<'repo> {
         self.edit_count
     }
 
-    /// Write modified files to disk and run `gofmt` on each.
+    /// Write modified files to disk.
     pub fn commit(self) -> Result<CommitSummary, Box<dyn std::error::Error>> {
         let files_modified = self.results.len();
         let edits_applied = self.edit_count;
 
         for (path, new_bytes) in &self.results {
-            // Write the raw modified source first.
             std::fs::write(path, new_bytes)?;
-
-            // Run gofmt to normalize formatting.
-            let source_str = String::from_utf8_lossy(new_bytes);
-            let formatted = Printer::gofmt(&source_str);
-            std::fs::write(path, formatted.as_bytes())?;
         }
 
         Ok(CommitSummary {
