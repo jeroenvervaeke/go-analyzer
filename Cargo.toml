@@ -1,0 +1,3 @@
+[workspace]
+members = ["go-model", "go-analyzer"]
+resolver = "2"

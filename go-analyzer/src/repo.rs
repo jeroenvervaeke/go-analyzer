@@ -1,0 +1,166 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+use go_model::{FuncDecl, MethodDecl, SourceFile, TopLevelDecl, TypeSpec};
+
+use crate::applied::Applied;
+use crate::changes::Changes;
+use crate::edit::apply_edits;
+use crate::selection::{Selection, SelectionItem};
+
+pub struct Repo {
+    pub(crate) _root: PathBuf,
+    pub(crate) files: HashMap<PathBuf, RepoFile>,
+}
+
+pub(crate) struct RepoFile {
+    pub source: Vec<u8>,
+    pub ast: SourceFile,
+}
+
+impl Repo {
+    /// Recursively load all `.go` files under `path`, parse each one, and
+    /// skip any that fail to parse.
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, Box<dyn std::error::Error>> {
+        let root = path.as_ref().canonicalize()?;
+        let mut files = HashMap::new();
+
+        for entry in walkdir(&root)? {
+            let source = std::fs::read(&entry)?;
+            let Ok(ast) = crate::walker::parse_and_walk(&source) else {
+                continue;
+            };
+            files.insert(entry, RepoFile { source, ast });
+        }
+
+        Ok(Self { _root: root, files })
+    }
+
+    pub fn functions(&self) -> Selection<'_, FuncDecl> {
+        let items = self
+            .files
+            .iter()
+            .flat_map(|(path, rf)| {
+                rf.ast.decls.iter().filter_map(move |d| match d {
+                    TopLevelDecl::Func(f) => Some(SelectionItem {
+                        item: (**f).clone(),
+                        file: path.clone(),
+                    }),
+                    _ => None,
+                })
+            })
+            .collect();
+        Selection { repo: self, items }
+    }
+
+    pub fn methods(&self) -> Selection<'_, MethodDecl> {
+        let items = self
+            .files
+            .iter()
+            .flat_map(|(path, rf)| {
+                rf.ast.decls.iter().filter_map(move |d| match d {
+                    TopLevelDecl::Method(m) => Some(SelectionItem {
+                        item: (**m).clone(),
+                        file: path.clone(),
+                    }),
+                    _ => None,
+                })
+            })
+            .collect();
+        Selection { repo: self, items }
+    }
+
+    pub fn types(&self) -> Selection<'_, TypeSpec> {
+        let items = self
+            .files
+            .iter()
+            .flat_map(|(path, rf)| {
+                rf.ast.decls.iter().flat_map(move |d| match d {
+                    TopLevelDecl::Type(specs) => specs
+                        .iter()
+                        .map(|t| SelectionItem {
+                            item: t.clone(),
+                            file: path.clone(),
+                        })
+                        .collect::<Vec<_>>(),
+                    _ => vec![],
+                })
+            })
+            .collect();
+        Selection { repo: self, items }
+    }
+
+    pub fn structs(&self) -> Selection<'_, TypeSpec> {
+        self.types().structs()
+    }
+
+    pub fn interfaces(&self) -> Selection<'_, TypeSpec> {
+        self.types().interfaces()
+    }
+
+    /// Apply changes to the repo, producing an `Applied` that can be previewed
+    /// or committed.
+    pub fn apply(&self, changes: Changes) -> Applied<'_> {
+        let edit_count = changes.edit_count();
+
+        // Group edits by file path.
+        let mut per_file: HashMap<PathBuf, Vec<crate::edit::Edit>> = HashMap::new();
+        for edit in changes.edits {
+            per_file.entry(edit.file.clone()).or_default().push(edit);
+        }
+
+        // Apply edits per file, falling back to original source on error.
+        let mut results = HashMap::new();
+        for (path, edits) in per_file {
+            let Some(rf) = self.files.get(&path) else {
+                continue;
+            };
+            match apply_edits(&rf.source, &edits) {
+                Ok(modified) => {
+                    results.insert(path, modified);
+                }
+                Err(err) => {
+                    eprintln!(
+                        "warning: failed to apply edits to {}: {err}",
+                        path.display()
+                    );
+                }
+            }
+        }
+
+        Applied {
+            repo: self,
+            results,
+            edit_count,
+        }
+    }
+}
+
+/// Recursively collect all `.go` file paths under `root`.
+fn walkdir(root: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    let mut result = Vec::new();
+    walk_recursive(root, &mut result)?;
+    result.sort();
+    Ok(result)
+}
+
+fn walk_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    let entries = std::fs::read_dir(dir)?;
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        let ft = entry.file_type()?;
+        if ft.is_dir() {
+            // Skip hidden dirs and common non-Go dirs.
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with('.') || name_str == "vendor" || name_str == "node_modules" {
+                continue;
+            }
+            walk_recursive(&path, out)?;
+        } else if ft.is_file() && path.extension().is_some_and(|ext| ext == "go") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
