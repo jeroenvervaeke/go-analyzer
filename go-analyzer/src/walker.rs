@@ -483,9 +483,10 @@ fn walk_type_constraint(tc: &cst::TypeConstraint<'_>, src: &[u8]) -> R<TypeExpr>
             .children
             .iter()
             .map(|t| {
+                let (tilde, ty) = walk_type_with_tilde(t, src)?;
                 Ok(TypeTermElem {
-                    tilde: false,
-                    ty: walk_type(t, src)?,
+                    tilde,
+                    ty,
                     span: sp(t),
                 })
             })
@@ -501,6 +502,21 @@ fn walk_type_constraint(tc: &cst::TypeConstraint<'_>, src: &[u8]) -> R<TypeExpr>
 }
 
 // --- Types ---
+
+/// Walk a type, detecting if it's wrapped in `~` (NegatedType).
+/// Returns `(tilde, type_expr)`.
+fn walk_type_with_tilde(t: &cst::Type<'_>, src: &[u8]) -> R<(bool, TypeExpr)> {
+    match t {
+        cst::Type::SimpleType(st) => match st.as_ref() {
+            cst::SimpleType::NegatedType(nt) => Ok((true, walk_type(&nt.children, src)?)),
+            _ => Ok((false, walk_simple_type(st, src)?)),
+        },
+        cst::Type::ParenthesizedType(pt) => {
+            let (tilde, ty) = walk_type_with_tilde(&pt.children, src)?;
+            Ok((tilde, ty))
+        }
+    }
+}
 
 fn walk_type(t: &cst::Type<'_>, src: &[u8]) -> R<TypeExpr> {
     stacker::maybe_grow(512 * 1024, 2 * 1024 * 1024, || walk_type_inner(t, src))
@@ -570,6 +586,9 @@ fn walk_simple_type(st: &cst::SimpleType<'_>, src: &[u8]) -> R<TypeExpr> {
                 args,
             })
         }
+        // ~T in type constraints — the tilde is tracked at the TypeTermElem level.
+        // When NegatedType appears as a standalone type (not inside a TypeTerm),
+        // we strip it since TypeExpr has no tilde variant.
         cst::SimpleType::NegatedType(nt) => walk_type(&nt.children, src),
     }
 }
@@ -605,9 +624,10 @@ fn walk_type_arguments(ta: &cst::TypeArguments<'_>, src: &[u8]) -> R<Vec<TypeExp
                     .children
                     .iter()
                     .map(|t| {
+                        let (tilde, ty) = walk_type_with_tilde(t, src)?;
                         Ok(TypeTermElem {
-                            tilde: false,
-                            ty: walk_type(t, src)?,
+                            tilde,
+                            ty,
                             span: sp(t),
                         })
                     })
@@ -656,11 +676,11 @@ fn walk_field_decl(fd: &cst::FieldDeclaration<'_>, src: &[u8]) -> R<FieldDecl> {
     let tag = fd.tag.as_ref().map(|t| {
         let (raw, fspan) = match t {
             cst::FieldDeclarationTag::InterpretedStringLiteral(s) => {
-                // Can't call .text() on InterpretedStringLiteral; use span position
-                // We'll reconstruct later. For now store empty and fix with src access.
-                (String::new(), sp(s.as_ref()))
+                (text_from_span(src, &s.span).to_owned(), sp(s.as_ref()))
             }
-            cst::FieldDeclarationTag::RawStringLiteral(s) => (String::new(), sp(s.as_ref())),
+            cst::FieldDeclarationTag::RawStringLiteral(s) => {
+                (text_from_span(src, &s.span).to_owned(), sp(s.as_ref()))
+            }
         };
         StringLit { raw, span: fspan }
     });
@@ -749,9 +769,10 @@ fn walk_interface_type(it: &cst::InterfaceType<'_>, src: &[u8]) -> R<InterfaceTy
                         .children
                         .iter()
                         .map(|t| {
+                            let (tilde, ty) = walk_type_with_tilde(t, src)?;
                             Ok(TypeTermElem {
-                                tilde: false,
-                                ty: walk_type(t, src)?,
+                                tilde,
+                                ty,
                                 span: sp(t),
                             })
                         })
@@ -857,27 +878,15 @@ fn walk_stmt_inner(s: &cst::Statement<'_>, src: &[u8]) -> R<Stmt> {
         }
         cst::Statement::TypeDeclaration(td) => {
             let specs = walk_type_decl(td, src)?;
-            if let Some(first) = specs.into_iter().next() {
-                Ok(Stmt::TypeDecl(first, sp(td.as_ref())))
-            } else {
-                Ok(Stmt::Empty(sp(td.as_ref())))
-            }
+            Ok(Stmt::TypeDecl(specs, sp(td.as_ref())))
         }
         cst::Statement::VarDeclaration(vd) => {
             let specs = walk_var_decl(vd, src)?;
-            if let Some(first) = specs.into_iter().next() {
-                Ok(Stmt::VarDecl(first, sp(vd.as_ref())))
-            } else {
-                Ok(Stmt::Empty(sp(vd.as_ref())))
-            }
+            Ok(Stmt::VarDecl(specs, sp(vd.as_ref())))
         }
         cst::Statement::ConstDeclaration(cd) => {
             let specs = walk_const_decl(cd, src)?;
-            if let Some(first) = specs.into_iter().next() {
-                Ok(Stmt::ConstDecl(first, sp(cd.as_ref())))
-            } else {
-                Ok(Stmt::Empty(sp(cd.as_ref())))
-            }
+            Ok(Stmt::ConstDecl(specs, sp(cd.as_ref())))
         }
     }
 }
@@ -1049,7 +1058,7 @@ fn walk_range_stmt(
         };
         (key, value, assign)
     } else {
-        (None, None, RangeAssign::Define)
+        (None, None, RangeAssign::None)
     };
     Ok(Stmt::ForRange {
         key,
@@ -1116,10 +1125,12 @@ fn walk_type_switch(tss: &cst::TypeSwitchStatement<'_>, src: &[u8]) -> R<Stmt> {
         })
     });
     let expr = walk_expr(&tss.value, src)?;
+    // Use the value expression's span for the assign, not the entire switch span.
+    let assign_span = sp(&tss.value);
     let assign = TypeSwitchAssign {
         name,
         expr,
-        span: sp(tss),
+        span: assign_span,
     };
 
     let mut cases = Vec::new();
@@ -1168,23 +1179,23 @@ fn walk_select(ss: &cst::SelectStatement<'_>, src: &[u8]) -> R<Stmt> {
                 match &cc.communication {
                     cst::CommunicationCaseCommunication::SendStatement(send) => {
                         cases.push(CommCase::Send {
-                            stmt: Stmt::Send {
+                            stmt: Box::new(Stmt::Send {
                                 channel: walk_expr(&send.channel, src)?,
                                 value: walk_expr(&send.value, src)?,
                                 span: sp(send.as_ref()),
-                            },
+                            }),
                             body,
                             span: sp(cc.as_ref()),
                         });
                     }
                     cst::CommunicationCaseCommunication::ReceiveStatement(recv) => {
                         let recv_expr = walk_expr(&recv.right, src)?;
-                        let stmt = if let Some(left) = &recv.left {
+                        let (stmt, bare_recv) = if let Some(left) = &recv.left {
                             let lhs = walk_expr_list(left, src)?;
                             let left_end = left.span().end_byte;
                             let right_start = recv.right.span().start_byte;
                             let between = &src[left_end..right_start];
-                            if between.windows(2).any(|w| w == b":=") {
+                            let s = if between.windows(2).any(|w| w == b":=") {
                                 let names = lhs
                                     .into_iter()
                                     .filter_map(|e| {
@@ -1195,24 +1206,27 @@ fn walk_select(ss: &cst::SelectStatement<'_>, src: &[u8]) -> R<Stmt> {
                                         }
                                     })
                                     .collect();
-                                Some(Stmt::ShortVarDecl {
+                                Stmt::ShortVarDecl {
                                     names,
                                     values: vec![recv_expr],
                                     span: sp(recv.as_ref()),
-                                })
+                                }
                             } else {
-                                Some(Stmt::Assign {
+                                Stmt::Assign {
                                     lhs,
                                     op: AssignOp::Assign,
                                     rhs: vec![recv_expr],
                                     span: sp(recv.as_ref()),
-                                })
-                            }
+                                }
+                            };
+                            (Some(Box::new(s)), None)
                         } else {
-                            None
+                            // Bare receive: `case <-ch:`
+                            (None, Some(Box::new(recv_expr)))
                         };
                         cases.push(CommCase::Recv {
                             stmt,
+                            recv_expr: bare_recv,
                             body,
                             span: sp(cc.as_ref()),
                         });
@@ -1573,10 +1587,20 @@ fn type_to_expr(ty: &TypeExpr, span: Span) -> Expr {
             name: name.clone(),
             span,
         },
-        _ => Expr::Ident(Ident {
+        // Generic type instantiation (e.g., Set[int]) doesn't need parens.
+        TypeExpr::Generic { .. } => Expr::Ident(Ident {
             name: crate::printer::Printer::type_expr(ty),
             span,
         }),
+        // Complex types (pointers, slices, etc.) need parentheses when used as
+        // type conversions: `(*T)(x)` not `*T(x)`.
+        _ => {
+            let inner = Expr::Ident(Ident {
+                name: crate::printer::Printer::type_expr(ty),
+                span,
+            });
+            Expr::Paren(Box::new(inner), span)
+        }
     }
 }
 

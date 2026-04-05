@@ -32,6 +32,12 @@ pub enum ApplyError {
         b_start: usize,
         b_end: usize,
     },
+    #[error("edit span {start}..{end} out of bounds for source of length {source_len}")]
+    OutOfBounds {
+        start: usize,
+        end: usize,
+        source_len: usize,
+    },
 }
 
 /// Represents a resolved byte-range operation on a single file's source.
@@ -69,6 +75,18 @@ pub fn apply_edits(source: &[u8], edits: &[Edit]) -> Result<Vec<u8>, ApplyError>
             },
         })
         .collect();
+
+    // Bounds check: reject edits that extend past the source or have inverted spans.
+    let source_len = source.len();
+    for edit in &resolved {
+        if edit.end > source_len || edit.start > source_len || edit.start > edit.end {
+            return Err(ApplyError::OutOfBounds {
+                start: edit.start,
+                end: edit.end,
+                source_len,
+            });
+        }
+    }
 
     // Sort by start byte, ties broken by end byte descending (wider spans first
     // so overlap detection catches them).

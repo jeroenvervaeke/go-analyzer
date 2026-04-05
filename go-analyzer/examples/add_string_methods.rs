@@ -3,7 +3,7 @@
 //! Usage: cargo run --example add_string_methods -- <path-to-go-repo>
 //!        cargo run --example add_string_methods -- <path-to-go-repo> --dry-run
 
-use go_analyzer::{build, Repo};
+use go_analyzer::{Repo, build};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();

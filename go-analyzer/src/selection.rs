@@ -276,29 +276,38 @@ impl<'repo> Selection<'repo, TypeSpec> {
         let mut entries = Vec::new();
 
         for si in &self.items {
-            // Find matching methods in the repo for this type.
+            // Find matching methods in the same package (directory) as the type.
             let type_name = si.item.name().name.clone();
-            let existing: Option<MethodDecl> = self
+            let type_dir = si.file.parent();
+            let found: Option<(MethodDecl, PathBuf)> = self
                 .repo
                 .files
                 .iter()
-                .flat_map(|(_, rf)| rf.ast.decls.iter())
-                .filter_map(|d| match d {
-                    TopLevelDecl::Method(m) => Some(m.as_ref()),
-                    _ => None,
+                .filter(|(path, _)| path.parent() == type_dir)
+                .flat_map(|(path, rf)| {
+                    rf.ast.decls.iter().filter_map(move |d| match d {
+                        TopLevelDecl::Method(m) => Some((m.as_ref(), path)),
+                        _ => None,
+                    })
                 })
-                .find(|m| {
+                .find(|(m, _)| {
                     m.name.name == method_name
                         && receiver_type_name(&m.receiver) == Some(&type_name)
                 })
-                .cloned();
+                .map(|(m, path)| (m.clone(), path.clone()));
+
+            let (existing, method_file) = match found {
+                Some((m, path)) => (Some(m), Some(path)),
+                None => (None, None),
+            };
 
             entries.push(SelectionItem {
                 item: MethodEntry {
                     type_spec: si.item.clone(),
                     method_name: method_name.to_owned(),
                     existing,
-                    file: si.file.clone(),
+                    type_file: si.file.clone(),
+                    method_file,
                 },
                 file: si.file.clone(),
             });
@@ -395,7 +404,13 @@ impl<'repo> Selection<'repo, TypeSpec> {
                     if span.is_synthetic() {
                         continue;
                     }
-                    if names.iter().any(|n| n.name == field_name) {
+                    if !names.iter().any(|n| n.name == field_name) {
+                        continue;
+                    }
+                    // Only delete if this is the sole name in the field declaration.
+                    // Multi-name fields like `X, Y int` can't be partially deleted
+                    // via span replacement — skip them to avoid data loss.
+                    if names.len() == 1 {
                         return Some(Edit {
                             file: si.file.clone(),
                             kind: EditKind::Delete { span: *span },
@@ -416,7 +431,10 @@ pub struct MethodEntry {
     pub type_spec: TypeSpec,
     pub method_name: String,
     pub existing: Option<MethodDecl>,
-    pub file: PathBuf,
+    /// File containing the type declaration (used for or_add insertion).
+    pub type_file: PathBuf,
+    /// File containing the existing method (used for and_modify/delete edits).
+    pub method_file: Option<PathBuf>,
 }
 
 impl<'repo> Selection<'repo, MethodEntry> {
@@ -436,7 +454,7 @@ impl<'repo> Selection<'repo, MethodEntry> {
                 let printed = Printer::method_decl(&method);
                 // Insert after the type declaration.
                 Some(Edit {
-                    file: si.file.clone(),
+                    file: si.item.type_file.clone(),
                     kind: EditKind::InsertAfter {
                         anchor_byte: ts.span().end_byte,
                         new_text: format!("\n\n{printed}"),
@@ -454,6 +472,7 @@ impl<'repo> Selection<'repo, MethodEntry> {
             .iter()
             .filter_map(|si| {
                 let existing = si.item.existing.as_ref()?;
+                let method_file = si.item.method_file.as_ref()?;
                 if existing.span.is_synthetic() {
                     return None;
                 }
@@ -461,7 +480,7 @@ impl<'repo> Selection<'repo, MethodEntry> {
                 modify(&mut modified);
                 let new_text = Printer::method_decl(&modified);
                 Some(Edit {
-                    file: si.file.clone(),
+                    file: method_file.clone(),
                     kind: EditKind::Replace {
                         span: existing.span,
                         new_text,
@@ -479,11 +498,12 @@ impl<'repo> Selection<'repo, MethodEntry> {
             .iter()
             .filter_map(|si| {
                 let existing = si.item.existing.as_ref()?;
+                let method_file = si.item.method_file.as_ref()?;
                 if existing.span.is_synthetic() {
                     return None;
                 }
                 Some(Edit {
-                    file: si.file.clone(),
+                    file: method_file.clone(),
                     kind: EditKind::Delete {
                         span: existing.span,
                     },

@@ -418,8 +418,41 @@ impl Printer {
                 let values_str: Vec<_> = values.iter().map(|e| Self::expr_at(e, indent)).collect();
                 format!("{} := {}", names_str.join(", "), values_str.join(", "))
             }
-            Stmt::VarDecl(vs, _) => Self::var_spec_at(vs, indent),
-            Stmt::ConstDecl(cs, _) => Self::const_spec_at(cs, indent),
+            Stmt::VarDecl(specs, _) => {
+                if specs.len() == 1 {
+                    Self::var_spec_at(&specs[0], indent)
+                } else {
+                    let inner = indent + 1;
+                    let mut s = String::from("var (\n");
+                    for vs in specs {
+                        s.push_str(&indent_str(inner));
+                        // Strip the "var " prefix from each spec
+                        let spec_str = Self::var_spec_at(vs, inner);
+                        s.push_str(spec_str.strip_prefix("var ").unwrap_or(&spec_str));
+                        s.push('\n');
+                    }
+                    s.push_str(&indent_str(indent));
+                    s.push(')');
+                    s
+                }
+            }
+            Stmt::ConstDecl(specs, _) => {
+                if specs.len() == 1 {
+                    Self::const_spec_at(&specs[0], indent)
+                } else {
+                    let inner = indent + 1;
+                    let mut s = String::from("const (\n");
+                    for cs in specs {
+                        s.push_str(&indent_str(inner));
+                        let spec_str = Self::const_spec_at(cs, inner);
+                        s.push_str(spec_str.strip_prefix("const ").unwrap_or(&spec_str));
+                        s.push('\n');
+                    }
+                    s.push_str(&indent_str(indent));
+                    s.push(')');
+                    s
+                }
+            }
             Stmt::Inc(e, _) => format!("{}++", Self::expr_at(e, indent)),
             Stmt::Dec(e, _) => format!("{}--", Self::expr_at(e, indent)),
             Stmt::Send { channel, value, .. } => {
@@ -474,8 +507,9 @@ impl Printer {
                     if let Some(cond) = cond {
                         out.push_str(&Self::expr_at(cond, indent));
                     }
-                    out.push_str("; ");
+                    out.push(';');
                     if let Some(post) = post {
+                        out.push(' ');
                         out.push_str(&Self::stmt_at(post, indent));
                     }
                     out.push(' ');
@@ -509,6 +543,7 @@ impl Printer {
                     match assign {
                         RangeAssign::Define => out.push_str(" := "),
                         RangeAssign::Assign => out.push_str(" = "),
+                        RangeAssign::None => {}
                     }
                 }
                 out.push_str("range ");
@@ -604,10 +639,17 @@ impl Printer {
                                 out.push('\n');
                             }
                         }
-                        CommCase::Recv { stmt, body, .. } => {
+                        CommCase::Recv {
+                            stmt,
+                            recv_expr,
+                            body,
+                            ..
+                        } => {
                             out.push_str(&indent_str(indent));
                             if let Some(stmt) = stmt {
                                 out.push_str(&format!("case {}:\n", Self::stmt_at(stmt, indent)));
+                            } else if let Some(expr) = recv_expr {
+                                out.push_str(&format!("case {}:\n", Self::expr_at(expr, indent)));
                             } else {
                                 out.push_str("case:\n");
                             }
@@ -658,7 +700,22 @@ impl Printer {
                     Self::stmt_at(body, indent)
                 )
             }
-            Stmt::TypeDecl(ts, _) => format!("type {}", Self::type_spec_inner_at(ts, indent)),
+            Stmt::TypeDecl(specs, _) => {
+                if specs.len() == 1 {
+                    format!("type {}", Self::type_spec_inner_at(&specs[0], indent))
+                } else {
+                    let inner = indent + 1;
+                    let mut s = String::from("type (\n");
+                    for ts in specs {
+                        s.push_str(&indent_str(inner));
+                        s.push_str(&Self::type_spec_inner_at(ts, inner));
+                        s.push('\n');
+                    }
+                    s.push_str(&indent_str(indent));
+                    s.push(')');
+                    s
+                }
+            }
         }
     }
 
@@ -1524,12 +1581,12 @@ mod tests {
     #[test]
     fn test_print_var_decl() {
         let s = Printer::stmt(&Stmt::VarDecl(
-            VarSpec {
+            vec![VarSpec {
                 names: vec![Ident::synthetic("x")],
                 ty: Some(TypeExpr::Named(Ident::synthetic("int"))),
                 values: vec![],
                 span: Span::synthetic(),
-            },
+            }],
             Span::synthetic(),
         ));
         assert_eq!(s, "var x int");

@@ -103,23 +103,24 @@ impl Repo {
     /// Apply changes to the repo, producing an `Applied` that can be previewed
     /// or committed.
     pub fn apply(&self, changes: Changes) -> Applied<'_> {
-        let edit_count = changes.edit_count();
-
         // Group edits by file path.
         let mut per_file: HashMap<PathBuf, Vec<crate::edit::Edit>> = HashMap::new();
         for edit in changes.edits {
             per_file.entry(edit.file.clone()).or_default().push(edit);
         }
 
-        // Apply edits per file, falling back to original source on error.
+        // Apply edits per file, tracking only successfully applied edits.
         let mut results = HashMap::new();
+        let mut applied_edit_count = 0usize;
         for (path, edits) in per_file {
             let Some(rf) = self.files.get(&path) else {
                 continue;
             };
+            let file_edit_count = edits.len();
             match apply_edits(&rf.source, &edits) {
                 Ok(modified) => {
                     results.insert(path, modified);
+                    applied_edit_count += file_edit_count;
                 }
                 Err(err) => {
                     eprintln!(
@@ -133,7 +134,7 @@ impl Repo {
         Applied {
             repo: self,
             results,
-            edit_count,
+            edit_count: applied_edit_count,
         }
     }
 }

@@ -17,8 +17,8 @@ pub enum Stmt {
         values: Vec<Expr>,
         span: Span,
     },
-    VarDecl(VarSpec, Span),
-    ConstDecl(ConstSpec, Span),
+    VarDecl(Vec<VarSpec>, Span),
+    ConstDecl(Vec<ConstSpec>, Span),
     Inc(Expr, Span),
     Dec(Expr, Span),
     Send {
@@ -79,7 +79,7 @@ pub enum Stmt {
         body: Box<Stmt>,
         span: Span,
     },
-    TypeDecl(TypeSpec, Span),
+    TypeDecl(Vec<TypeSpec>, Span),
     Empty(Span),
 }
 
@@ -103,6 +103,8 @@ pub enum AssignOp {
 pub enum RangeAssign {
     Define,
     Assign,
+    /// Bare `for range x` with no iteration variables (Go 1.22+).
+    None,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -135,12 +137,15 @@ pub struct TypeSwitchAssign {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CommCase {
     Send {
-        stmt: Stmt,
+        stmt: Box<Stmt>,
         body: Vec<Stmt>,
         span: Span,
     },
     Recv {
-        stmt: Option<Stmt>,
+        /// Assignment statement if `x := <-ch` or `x = <-ch`, otherwise None.
+        stmt: Option<Box<Stmt>>,
+        /// The receive expression (e.g., `<-ch`) for bare receives without assignment.
+        recv_expr: Option<Box<Expr>>,
         body: Vec<Stmt>,
         span: Span,
     },

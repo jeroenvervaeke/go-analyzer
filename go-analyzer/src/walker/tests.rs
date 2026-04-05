@@ -241,14 +241,16 @@ fn test_walk_channels() {
         .collect();
 
     // recv channel
-    if let Some(recv_var) = var_stmts.first()
+    if let Some(recv_specs) = var_stmts.first()
+        && let Some(recv_var) = recv_specs.first()
         && let Some(TypeExpr::Channel { direction, .. }) = &recv_var.ty
     {
         assert_eq!(*direction, ChanDir::Recv);
     }
 
     // send channel
-    if let Some(send_var) = var_stmts.get(1)
+    if let Some(send_specs) = var_stmts.get(1)
+        && let Some(send_var) = send_specs.first()
         && let Some(TypeExpr::Channel { direction, .. }) = &send_var.ty
     {
         assert_eq!(*direction, ChanDir::Send);

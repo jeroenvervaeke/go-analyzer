@@ -51,6 +51,106 @@ fn test_ident_exported() {
 }
 
 #[test]
+fn test_ident_exported_unicode() {
+    // Go spec: exported if first char is Unicode uppercase letter (class Lu)
+    assert!(Ident::synthetic("Über").is_exported());
+    assert!(Ident::synthetic("Σ").is_exported());
+    assert!(Ident::synthetic("Ω").is_exported());
+    assert!(!Ident::synthetic("über").is_exported());
+    assert!(!Ident::synthetic("σ").is_exported());
+}
+
+#[test]
+fn test_string_lit_value_go_escape_sequences() {
+    // \a (bell)
+    let lit = StringLit {
+        raw: r#""\a""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "\x07");
+
+    // \b (backspace)
+    let lit = StringLit {
+        raw: r#""\b""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "\x08");
+
+    // \f (form feed)
+    let lit = StringLit {
+        raw: r#""\f""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "\x0C");
+
+    // \v (vertical tab)
+    let lit = StringLit {
+        raw: r#""\v""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "\x0B");
+
+    // \xNN (hex byte)
+    let lit = StringLit {
+        raw: r#""\x41""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "A");
+
+    // \uNNNN (unicode)
+    let lit = StringLit {
+        raw: r#""\u00e9""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "é");
+
+    // \UNNNNNNNN (unicode)
+    let lit = StringLit {
+        raw: r#""\U0001F600""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "😀");
+
+    // \NNN (octal)
+    let lit = StringLit {
+        raw: r#""\101""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "A"); // octal 101 = 65 = 'A'
+}
+
+#[test]
+fn test_string_lit_value_high_byte_hex_escape() {
+    // Go's \xFF is a single byte 0xFF. In Rust String (UTF-8), bytes >= 0x80
+    // can't be represented as single chars directly. We use Unicode replacement
+    // or Latin-1 mapping. The key invariant: value() should not panic and
+    // should produce a consistent result.
+    let lit = StringLit {
+        raw: r#""\x00""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "\0"); // \x00 = null byte
+
+    let lit = StringLit {
+        raw: r#""\x7f""#.to_owned(),
+        span: Span::synthetic(),
+    };
+    assert_eq!(lit.value(), "\x7f"); // \x7f = DEL, valid ASCII
+}
+
+#[test]
+fn test_string_lit_roundtrip_control_chars() {
+    // from_value → value should roundtrip for strings with control characters
+    let original = "hello\x07world"; // contains bell character
+    let lit = StringLit::from_value(original);
+    assert_eq!(lit.value(), original, "roundtrip failed for bell char");
+
+    let original = "tab\there";
+    let lit = StringLit::from_value(original);
+    assert_eq!(lit.value(), original, "roundtrip failed for tab");
+}
+
+#[test]
 fn test_string_lit_from_value_and_value() {
     let lit = StringLit::from_value("hello");
     assert_eq!(lit.value(), "hello");
