@@ -26,7 +26,9 @@ impl Repo {
         let mut files = HashMap::new();
 
         for entry in walkdir(&root)? {
-            let source = std::fs::read(&entry)?;
+            let Ok(source) = std::fs::read(&entry) else {
+                continue;
+            };
             let Ok(ast) = crate::walker::parse_and_walk(&source) else {
                 continue;
             };

@@ -503,6 +503,10 @@ fn walk_type_constraint(tc: &cst::TypeConstraint<'_>, src: &[u8]) -> R<TypeExpr>
 // --- Types ---
 
 fn walk_type(t: &cst::Type<'_>, src: &[u8]) -> R<TypeExpr> {
+    stacker::maybe_grow(512 * 1024, 2 * 1024 * 1024, || walk_type_inner(t, src))
+}
+
+fn walk_type_inner(t: &cst::Type<'_>, src: &[u8]) -> R<TypeExpr> {
     match t {
         cst::Type::SimpleType(st) => walk_simple_type(st, src),
         cst::Type::ParenthesizedType(pt) => walk_type(&pt.children, src),
@@ -781,6 +785,10 @@ fn walk_block(b: &cst::Block<'_>, src: &[u8]) -> R<Block> {
 }
 
 fn walk_stmt(s: &cst::Statement<'_>, src: &[u8]) -> R<Stmt> {
+    stacker::maybe_grow(512 * 1024, 2 * 1024 * 1024, || walk_stmt_inner(s, src))
+}
+
+fn walk_stmt_inner(s: &cst::Statement<'_>, src: &[u8]) -> R<Stmt> {
     match s {
         cst::Statement::SimpleStatement(ss) => walk_simple_stmt(ss, src),
         cst::Statement::Block(b) => Ok(Stmt::Block(walk_block(b, src)?)),
@@ -1245,6 +1253,10 @@ fn walk_expr_list(el: &cst::ExpressionList<'_>, src: &[u8]) -> R<Vec<Expr>> {
 }
 
 fn walk_expr(e: &cst::Expression<'_>, src: &[u8]) -> R<Expr> {
+    stacker::maybe_grow(512 * 1024, 2 * 1024 * 1024, || walk_expr_inner(e, src))
+}
+
+fn walk_expr_inner(e: &cst::Expression<'_>, src: &[u8]) -> R<Expr> {
     match e {
         cst::Expression::Identifier(id) => Ok(Expr::Ident(ident_from_id(id))),
         cst::Expression::IntLiteral(lit) => Ok(Expr::Int(IntLit {

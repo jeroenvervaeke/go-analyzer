@@ -3,16 +3,6 @@ use std::process::Command;
 
 #[test]
 fn corpus_test_goroot_src() {
-    // Run in a thread with a larger stack to handle deeply nested Go files
-    std::thread::Builder::new()
-        .stack_size(32 * 1024 * 1024)
-        .spawn(corpus_test_inner)
-        .unwrap()
-        .join()
-        .unwrap();
-}
-
-fn corpus_test_inner() {
     let goroot = std::env::var("GOROOT")
         .or_else(|_| {
             Command::new("go")
