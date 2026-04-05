@@ -96,6 +96,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p go-analyzer --test printer_roundtrip
 
+  examples:
+    name: Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --example query_repo -p go-analyzer -- go-analyzer/tests/fixture_repo
+      - run: cargo run --example add_string_methods -p go-analyzer -- go-analyzer/tests/fixture_repo --dry-run
+      - run: cargo run --example delete_methods -p go-analyzer -- go-analyzer/tests/fixture_repo String --dry-run
+      - run: cargo run --example combine_changes -p go-analyzer -- go-analyzer/tests/fixture_repo --dry-run
+      - run: cargo run --example walk_and_print -p go-analyzer -- go-analyzer/tests/fixture_repo/beta/service.go
+
   test-corpus:
     name: Test corpus ($GOROOT/src)
     runs-on: ubuntu-latest
