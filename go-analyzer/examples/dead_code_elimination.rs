@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("Loaded {file_count} Go files.");
 
     eprintln!("Building call graph...");
-    let graph = CallGraph::build(&repo);
+    let mut graph = CallGraph::build(&repo);
     eprintln!(
         "Symbol table: {} symbols, {} edges.",
         graph.symbols.len(),
@@ -71,18 +71,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .join(", ")
     );
 
-    // Compute reachability
-    let reachable = graph.reachable_from(&entries);
-    eprintln!("Reachable symbols: {}", reachable.len());
+    // Compute reachability with iterative fixpoint — keeps pruning until
+    // no more dead code is found (handles transitive dead code).
+    let all_dead = graph.unreachable_fixpoint(&entries);
 
-    // Find unreachable symbols (exclude builtins, test files, init functions)
-    let unreachable: Vec<_> = graph
-        .symbols
-        .values()
-        .filter(|entry| !reachable.contains(&entry.symbol))
+    // Filter out test files and builtins
+    let unreachable: Vec<_> = all_dead
+        .iter()
         .filter(|entry| !is_test_file(&entry.file))
         .filter(|entry| !is_builtin_or_init(&entry.symbol.name))
         .collect();
+
+    eprintln!(
+        "Fixpoint reached: {} remaining symbols, {} dead.",
+        graph.symbols.len(),
+        unreachable.len()
+    );
 
     if unreachable.is_empty() {
         eprintln!("No dead code found!");
@@ -96,6 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SymbolKind::Func => "functions",
             SymbolKind::Method { .. } => "methods",
             SymbolKind::Type => "types",
+            SymbolKind::Field { .. } => "fields",
             SymbolKind::Var => "vars",
             SymbolKind::Const => "consts",
         };

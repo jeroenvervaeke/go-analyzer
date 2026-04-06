@@ -27,8 +27,14 @@ impl std::fmt::Display for Symbol {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SymbolKind {
     Func,
-    Method { receiver_type: String },
+    Method {
+        receiver_type: String,
+    },
     Type,
+    /// A named field on a struct type. Symbol name is "TypeName.FieldName".
+    Field {
+        owner_type: String,
+    },
     Var,
     Const,
 }
@@ -56,6 +62,9 @@ pub struct CallGraph {
     pub edges: Vec<CallEdge>,
     /// Adjacency list: caller → set of callees.
     pub calls: HashMap<Symbol, HashSet<Symbol>>,
+    /// Types that have serialization struct tags on any field.
+    /// When reachable, ALL their fields are kept alive.
+    pub serialized_types: HashSet<Symbol>,
     /// Reverse adjacency: callee → set of callers.
     pub called_by: HashMap<Symbol, HashSet<Symbol>>,
 }
@@ -198,6 +207,12 @@ impl CallGraph {
             }
         }
 
+        // Detect types with serialization struct tags.
+        // If any field has a tag containing a known serialization key,
+        // the entire struct is considered "serialized" and all fields
+        // are kept alive when the type is reachable.
+        let serialized_types = detect_serialized_types(repo);
+
         // Post-process: expand wildcard method references (*.Name) to all
         // matching methods in the same package. This is the conservative
         // approach for method calls where we lack type inference.
@@ -209,7 +224,7 @@ impl CallGraph {
         for edge in &wildcard_edges {
             let method_name = &edge.callee.name[2..]; // strip "*."
             let pkg_dir = &edge.callee.pkg_dir;
-            for (sym, _) in &symbols {
+            for sym in symbols.keys() {
                 if &sym.pkg_dir == pkg_dir && sym.name.ends_with(&format!(".{method_name}")) {
                     edges.push(CallEdge {
                         caller: edge.caller.clone(),
@@ -241,6 +256,7 @@ impl CallGraph {
         }
 
         Self {
+            serialized_types,
             symbols,
             edges,
             calls,
@@ -267,16 +283,42 @@ impl CallGraph {
                     }
                 }
             }
-            // Also mark the type as reachable if this is a method
-            if let Some(entry) = self.symbols.get(&sym)
-                && let SymbolKind::Method { receiver_type } = &entry.kind
-            {
-                let type_sym = Symbol {
-                    pkg_dir: sym.pkg_dir.clone(),
-                    name: receiver_type.clone(),
-                };
-                if visited.insert(type_sym.clone()) {
-                    queue.push_back(type_sym);
+
+            if let Some(entry) = self.symbols.get(&sym) {
+                // When a method is reachable, its receiver type is too
+                if let SymbolKind::Method { receiver_type } = &entry.kind {
+                    let type_sym = Symbol {
+                        pkg_dir: sym.pkg_dir.clone(),
+                        name: receiver_type.clone(),
+                    };
+                    if visited.insert(type_sym.clone()) {
+                        queue.push_back(type_sym);
+                    }
+                }
+                // When a serialized type is reachable, ALL its fields are
+                // reachable (serialization frameworks access them via reflection).
+                // For non-serialized types, only individually accessed fields
+                // are kept alive.
+                if entry.kind == SymbolKind::Type && self.serialized_types.contains(&sym) {
+                    for (field_sym, field_entry) in &self.symbols {
+                        if let SymbolKind::Field { owner_type } = &field_entry.kind
+                            && owner_type == &sym.name
+                            && field_sym.pkg_dir == sym.pkg_dir
+                            && visited.insert(field_sym.clone())
+                        {
+                            queue.push_back(field_sym.clone());
+                        }
+                    }
+                }
+                // When a field is reachable, its owner type is too
+                if let SymbolKind::Field { owner_type } = &entry.kind {
+                    let type_sym = Symbol {
+                        pkg_dir: sym.pkg_dir.clone(),
+                        name: owner_type.clone(),
+                    };
+                    if visited.insert(type_sym.clone()) {
+                        queue.push_back(type_sym);
+                    }
                 }
             }
         }
@@ -291,6 +333,59 @@ impl CallGraph {
             .values()
             .filter(|entry| !reachable.contains(&entry.symbol))
             .collect()
+    }
+
+    /// Compute unreachable symbols using iterative fixpoint.
+    ///
+    /// Repeatedly computes reachability and prunes unreachable symbols from
+    /// the graph until no more symbols can be removed. This catches transitive
+    /// dead code: if A is the only caller of B and A is dead, B is also dead.
+    ///
+    /// All computation is in-memory — no I/O until the caller applies changes.
+    pub fn unreachable_fixpoint(&mut self, entries: &[Symbol]) -> Vec<SymbolEntry> {
+        let mut all_dead = Vec::new();
+
+        loop {
+            let reachable = self.reachable_from(entries);
+            let dead: Vec<Symbol> = self
+                .symbols
+                .keys()
+                .filter(|sym| !reachable.contains(sym))
+                .cloned()
+                .collect();
+
+            if dead.is_empty() {
+                break;
+            }
+
+            // Collect entries for the dead symbols before removing them
+            for sym in &dead {
+                if let Some(entry) = self.symbols.remove(sym) {
+                    all_dead.push(entry);
+                }
+            }
+
+            // Remove edges involving dead symbols
+            let dead_set: HashSet<_> = dead.into_iter().collect();
+            self.edges
+                .retain(|e| !dead_set.contains(&e.caller) && !dead_set.contains(&e.callee));
+
+            // Rebuild adjacency lists
+            self.calls.clear();
+            self.called_by.clear();
+            for edge in &self.edges {
+                self.calls
+                    .entry(edge.caller.clone())
+                    .or_default()
+                    .insert(edge.callee.clone());
+                self.called_by
+                    .entry(edge.callee.clone())
+                    .or_default()
+                    .insert(edge.caller.clone());
+            }
+        }
+
+        all_dead
     }
 }
 
@@ -340,9 +435,10 @@ fn register_symbols(
             }
             TopLevelDecl::Type(specs) => {
                 for spec in specs {
+                    let type_name = spec.name().name.clone();
                     let sym = Symbol {
                         pkg_dir: pkg_dir.to_path_buf(),
-                        name: spec.name().name.clone(),
+                        name: type_name.clone(),
                     };
                     symbols.insert(
                         sym.clone(),
@@ -354,6 +450,31 @@ fn register_symbols(
                             exported: spec.name().is_exported(),
                         },
                     );
+                    // Register struct fields as individual symbols
+                    if let TypeExpr::Struct(st) = spec.ty() {
+                        for field in &st.fields {
+                            if let FieldDecl::Named { names, span, .. } = field {
+                                for name in names {
+                                    let field_sym = Symbol {
+                                        pkg_dir: pkg_dir.to_path_buf(),
+                                        name: format!("{}.{}", type_name, name.name),
+                                    };
+                                    symbols.insert(
+                                        field_sym.clone(),
+                                        SymbolEntry {
+                                            symbol: field_sym,
+                                            kind: SymbolKind::Field {
+                                                owner_type: type_name.clone(),
+                                            },
+                                            span: *span,
+                                            file: file.to_path_buf(),
+                                            exported: name.is_exported(),
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
             }
             TopLevelDecl::Var(specs) => {
@@ -924,4 +1045,71 @@ fn receiver_base_name(receiver: &Receiver) -> Option<String> {
         },
         _ => None,
     }
+}
+
+/// Known struct tag keys that indicate a type is used for serialization.
+const SERIALIZATION_TAG_KEYS: &[&str] = &[
+    "json",
+    "bson",
+    "yaml",
+    "xml",
+    "toml",
+    "msgpack",
+    "protobuf",
+    "db",
+    "mapstructure",
+    "env",
+    "form",
+    "query",
+    "param",
+    "header",
+    "csv",
+    "avro",
+];
+
+/// Detect which struct types have serialization tags on any field.
+fn detect_serialized_types(repo: &Repo) -> HashSet<Symbol> {
+    let mut result = HashSet::new();
+
+    for (path, rf) in &repo.files {
+        let pkg_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+
+        for decl in &rf.ast.decls {
+            let TopLevelDecl::Type(specs) = decl else {
+                continue;
+            };
+            for spec in specs {
+                let TypeExpr::Struct(st) = spec.ty() else {
+                    continue;
+                };
+                if struct_has_serialization_tags(st) {
+                    result.insert(Symbol {
+                        pkg_dir: pkg_dir.clone(),
+                        name: spec.name().name.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Check if any field in a struct has a tag containing a known serialization key.
+fn struct_has_serialization_tags(st: &StructType) -> bool {
+    for field in &st.fields {
+        let tag = match field {
+            FieldDecl::Named { tag, .. } => tag,
+            FieldDecl::Embedded { tag, .. } => tag,
+        };
+        let Some(tag) = tag else { continue };
+        let raw = &tag.raw;
+        for key in SERIALIZATION_TAG_KEYS {
+            // Tags look like: `json:"name" bson:"name"`
+            if raw.contains(&format!("{key}:")) {
+                return true;
+            }
+        }
+    }
+    false
 }
