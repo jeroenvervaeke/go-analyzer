@@ -3,20 +3,46 @@ use crate::{
     TypeExpr, UnaryOp,
 };
 
-// --- types ---
-
+/// Creates a named type expression from a string.
+///
+/// ```
+/// # use go_model::*;
+/// let ty = build::named("int");
+/// assert!(matches!(ty, TypeExpr::Named(_)));
+/// ```
 pub fn named(name: &str) -> TypeExpr {
     TypeExpr::Named(Ident::synthetic(name))
 }
 
+/// Creates a pointer type expression (`*T`).
+///
+/// ```
+/// # use go_model::*;
+/// let ty = build::pointer(build::named("int"));
+/// assert!(matches!(ty, TypeExpr::Pointer(_)));
+/// ```
 pub fn pointer(inner: TypeExpr) -> TypeExpr {
     TypeExpr::Pointer(Box::new(inner))
 }
 
+/// Creates a slice type expression (`[]T`).
+///
+/// ```
+/// # use go_model::*;
+/// let ty = build::slice(build::named("byte"));
+/// assert!(matches!(ty, TypeExpr::Slice(_)));
+/// ```
 pub fn slice(elem: TypeExpr) -> TypeExpr {
     TypeExpr::Slice(Box::new(elem))
 }
 
+/// Creates a map type expression (`map[K]V`).
+///
+/// ```
+/// # use go_model::*;
+/// let ty = build::map_type(build::named("string"), build::named("int"));
+/// assert!(matches!(ty, TypeExpr::Map { .. }));
+/// ```
 pub fn map_type(key: TypeExpr, value: TypeExpr) -> TypeExpr {
     TypeExpr::Map {
         key: Box::new(key),
@@ -24,16 +50,35 @@ pub fn map_type(key: TypeExpr, value: TypeExpr) -> TypeExpr {
     }
 }
 
-// --- exprs ---
-
+/// Creates an identifier expression.
+///
+/// ```
+/// # use go_model::*;
+/// let e = build::ident("x");
+/// assert!(matches!(e, Expr::Ident(_)));
+/// ```
 pub fn ident(name: &str) -> Expr {
     Expr::Ident(Ident::synthetic(name))
 }
 
+/// Creates a string literal expression from an unescaped value.
+///
+/// ```
+/// # use go_model::*;
+/// let e = build::string("hello");
+/// assert!(matches!(e, Expr::String(_)));
+/// ```
 pub fn string(value: &str) -> Expr {
     Expr::String(StringLit::from_value(value))
 }
 
+/// Creates an integer literal expression.
+///
+/// ```
+/// # use go_model::*;
+/// let e = build::int(42);
+/// assert!(matches!(e, Expr::Int(_)));
+/// ```
 pub fn int(value: i64) -> Expr {
     Expr::Int(IntLit {
         raw: value.to_string(),
@@ -41,6 +86,13 @@ pub fn int(value: i64) -> Expr {
     })
 }
 
+/// Creates a function call expression.
+///
+/// ```
+/// # use go_model::*;
+/// let e = build::call(build::ident("println"), vec![build::string("hi")]);
+/// assert!(matches!(e, Expr::Call { .. }));
+/// ```
 pub fn call(func: Expr, args: Vec<Expr>) -> Expr {
     Expr::Call {
         func: Box::new(func),
@@ -51,6 +103,13 @@ pub fn call(func: Expr, args: Vec<Expr>) -> Expr {
     }
 }
 
+/// Creates a selector expression (`operand.field`).
+///
+/// ```
+/// # use go_model::*;
+/// let e = build::selector(build::ident("fmt"), "Println");
+/// assert!(matches!(e, Expr::Selector { .. }));
+/// ```
 pub fn selector(operand: Expr, field: &str) -> Expr {
     Expr::Selector {
         operand: Box::new(operand),
@@ -59,6 +118,13 @@ pub fn selector(operand: Expr, field: &str) -> Expr {
     }
 }
 
+/// Creates a pointer dereference expression (`*operand`).
+///
+/// ```
+/// # use go_model::*;
+/// let e = build::deref(build::ident("p"));
+/// assert!(matches!(e, Expr::Unary { op: UnaryOp::Deref, .. }));
+/// ```
 pub fn deref(operand: Expr) -> Expr {
     Expr::Unary {
         op: UnaryOp::Deref,
@@ -67,6 +133,13 @@ pub fn deref(operand: Expr) -> Expr {
     }
 }
 
+/// Creates an address-of expression (`&operand`).
+///
+/// ```
+/// # use go_model::*;
+/// let e = build::addr(build::ident("x"));
+/// assert!(matches!(e, Expr::Unary { op: UnaryOp::Addr, .. }));
+/// ```
 pub fn addr(operand: Expr) -> Expr {
     Expr::Unary {
         op: UnaryOp::Addr,
@@ -75,8 +148,13 @@ pub fn addr(operand: Expr) -> Expr {
     }
 }
 
-// --- stmts ---
-
+/// Creates a return statement.
+///
+/// ```
+/// # use go_model::*;
+/// let s = build::ret(vec![build::ident("nil")]);
+/// assert!(matches!(s, Stmt::Return { .. }));
+/// ```
 pub fn ret(values: Vec<Expr>) -> Stmt {
     Stmt::Return {
         values,
@@ -84,6 +162,13 @@ pub fn ret(values: Vec<Expr>) -> Stmt {
     }
 }
 
+/// Creates a block of statements.
+///
+/// ```
+/// # use go_model::*;
+/// let b = build::block(vec![build::ret(vec![])]);
+/// assert_eq!(b.stmts.len(), 1);
+/// ```
 pub fn block(stmts: Vec<Stmt>) -> Block {
     Block {
         stmts,
@@ -91,8 +176,13 @@ pub fn block(stmts: Vec<Stmt>) -> Block {
     }
 }
 
-// --- declarations ---
-
+/// Creates a named parameter declaration.
+///
+/// ```
+/// # use go_model::*;
+/// let p = build::param(&["x", "y"], build::named("int"));
+/// assert_eq!(p.names.len(), 2);
+/// ```
 pub fn param(names: &[&str], ty: TypeExpr) -> ParamDecl {
     ParamDecl {
         names: names.iter().map(|n| Ident::synthetic(n)).collect(),
@@ -102,6 +192,13 @@ pub fn param(names: &[&str], ty: TypeExpr) -> ParamDecl {
     }
 }
 
+/// Creates an unnamed parameter declaration (type only, no parameter name).
+///
+/// ```
+/// # use go_model::*;
+/// let p = build::unnamed_param(build::named("error"));
+/// assert!(p.names.is_empty());
+/// ```
 pub fn unnamed_param(ty: TypeExpr) -> ParamDecl {
     ParamDecl {
         names: vec![],
@@ -111,6 +208,13 @@ pub fn unnamed_param(ty: TypeExpr) -> ParamDecl {
     }
 }
 
+/// Creates a pointer receiver, e.g. `(s *Server)`.
+///
+/// ```
+/// # use go_model::*;
+/// let r = build::pointer_receiver("s", "Server");
+/// assert!(matches!(r.ty, TypeExpr::Pointer(_)));
+/// ```
 pub fn pointer_receiver(var_name: &str, type_name: &str) -> Receiver {
     Receiver {
         name: Some(Ident::synthetic(var_name)),
@@ -120,6 +224,13 @@ pub fn pointer_receiver(var_name: &str, type_name: &str) -> Receiver {
     }
 }
 
+/// Creates a value receiver, e.g. `(s Server)`.
+///
+/// ```
+/// # use go_model::*;
+/// let r = build::value_receiver("s", "Server");
+/// assert!(matches!(r.ty, TypeExpr::Named(_)));
+/// ```
 pub fn value_receiver(var_name: &str, type_name: &str) -> Receiver {
     Receiver {
         name: Some(Ident::synthetic(var_name)),
@@ -129,6 +240,19 @@ pub fn value_receiver(var_name: &str, type_name: &str) -> Receiver {
     }
 }
 
+/// Creates a method declaration with a receiver, parameters, results, and body.
+///
+/// ```
+/// # use go_model::*;
+/// let m = build::method(
+///     build::pointer_receiver("s", "Server"),
+///     "Start",
+///     vec![],
+///     vec![build::unnamed_param(build::named("error"))],
+///     build::block(vec![build::ret(vec![build::ident("nil")])]),
+/// );
+/// assert_eq!(m.name.name, "Start");
+/// ```
 pub fn method(
     receiver: Receiver,
     name: &str,

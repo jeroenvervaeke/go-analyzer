@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Block, Expr, Ident, Span, StringLit, TypeExpr};
 
+/// Represents a Go function signature (parameters, results, and optional type parameters).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FuncType {
     pub type_params: Vec<TypeParam>,
@@ -10,6 +11,7 @@ pub struct FuncType {
     pub span: Span,
 }
 
+/// Represents a parameter declaration in a function signature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParamDecl {
     pub names: Vec<Ident>,
@@ -18,6 +20,7 @@ pub struct ParamDecl {
     pub span: Span,
 }
 
+/// Represents a type parameter declaration in a generic function or type, e.g. `[T any]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TypeParam {
     pub names: Vec<Ident>,
@@ -25,6 +28,7 @@ pub struct TypeParam {
     pub span: Span,
 }
 
+/// Represents a method receiver, e.g. `(s *Server)`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Receiver {
     pub name: Option<Ident>,
@@ -33,6 +37,7 @@ pub struct Receiver {
     pub span: Span,
 }
 
+/// Represents a top-level function declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FuncDecl {
     pub name: Ident,
@@ -42,6 +47,7 @@ pub struct FuncDecl {
     pub span: Span,
 }
 
+/// Represents a method declaration (a function with a receiver).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MethodDecl {
     pub receiver: Receiver,
@@ -52,20 +58,24 @@ pub struct MethodDecl {
     pub span: Span,
 }
 
+/// Represents a Go struct type with its field declarations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StructType {
     pub fields: Vec<FieldDecl>,
     pub span: Span,
 }
 
+/// Represents a field declaration within a struct type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FieldDecl {
+    /// Named field(s), e.g. `X, Y int` or `Name string \`json:"name"\``.
     Named {
         names: Vec<Ident>,
         ty: TypeExpr,
         tag: Option<StringLit>,
         span: Span,
     },
+    /// Embedded (anonymous) field, e.g. `io.Reader` or `*Base`.
     Embedded {
         ty: TypeExpr,
         tag: Option<StringLit>,
@@ -73,44 +83,55 @@ pub enum FieldDecl {
     },
 }
 
+/// Represents a Go interface type with its method and type constraints.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InterfaceType {
     pub elements: Vec<InterfaceElem>,
     pub span: Span,
 }
 
+/// Represents an element within an interface type definition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum InterfaceElem {
+    /// Method signature, e.g. `Read([]byte) (int, error)`.
     Method {
         name: Ident,
         ty: FuncType,
         span: Span,
     },
+    /// Type constraint term (Go 1.18+), e.g. `~int | ~string`.
     TypeTerm(TypeTerm),
+    /// Embedded interface, e.g. `io.Reader`.
     Embedded(TypeExpr),
 }
 
+/// Represents a union of type constraint elements, e.g. `~int | ~string`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TypeTerm {
     pub terms: Vec<TypeTermElem>,
     pub span: Span,
 }
 
+/// Represents a single element in a type constraint union.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TypeTermElem {
+    /// Whether the `~` (underlying type) prefix is present.
     pub tilde: bool,
     pub ty: TypeExpr,
     pub span: Span,
 }
 
+/// Represents a type specification (alias or definition).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TypeSpec {
+    /// Type alias, e.g. `type Foo = Bar`.
     Alias {
         name: Ident,
         type_params: Vec<TypeParam>,
         ty: TypeExpr,
         span: Span,
     },
+    /// Type definition, e.g. `type Foo struct { ... }`.
     Def {
         name: Ident,
         type_params: Vec<TypeParam>,
@@ -120,24 +141,28 @@ pub enum TypeSpec {
 }
 
 impl TypeSpec {
+    /// Returns the declared type name.
     pub fn name(&self) -> &Ident {
         match self {
             Self::Alias { name, .. } | Self::Def { name, .. } => name,
         }
     }
 
+    /// Returns the source span of this type spec.
     pub fn span(&self) -> Span {
         match self {
             Self::Alias { span, .. } | Self::Def { span, .. } => *span,
         }
     }
 
+    /// Returns a reference to the underlying type expression.
     pub fn ty(&self) -> &TypeExpr {
         match self {
             Self::Alias { ty, .. } | Self::Def { ty, .. } => ty,
         }
     }
 
+    /// Returns `true` if this is a struct type definition.
     pub fn is_struct(&self) -> bool {
         matches!(
             self,
@@ -148,6 +173,7 @@ impl TypeSpec {
         )
     }
 
+    /// Returns `true` if this is an interface type definition.
     pub fn is_interface(&self) -> bool {
         matches!(
             self,
@@ -159,6 +185,7 @@ impl TypeSpec {
     }
 }
 
+/// Represents a `var` specification, e.g. `var x, y int = 1, 2`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VarSpec {
     pub names: Vec<Ident>,
@@ -167,6 +194,7 @@ pub struct VarSpec {
     pub span: Span,
 }
 
+/// Represents a `const` specification, e.g. `const Pi float64 = 3.14`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConstSpec {
     pub names: Vec<Ident>,
@@ -175,6 +203,7 @@ pub struct ConstSpec {
     pub span: Span,
 }
 
+/// Represents a single import specification, e.g. `import "fmt"` or `import io "io/ioutil"`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ImportSpec {
     pub alias: ImportAlias,
@@ -182,14 +211,20 @@ pub struct ImportSpec {
     pub span: Span,
 }
 
+/// Represents the alias form of an import declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ImportAlias {
+    /// No explicit alias; the package name is derived from the import path.
     Implicit,
+    /// Dot import (`. "pkg"`), which imports all exported names into the current scope.
     Dot,
+    /// Blank import (`_ "pkg"`), used solely for side effects.
     Blank,
+    /// Explicit named alias, e.g. `mypkg "some/long/path"`.
     Named(Ident),
 }
 
+/// Represents a complete Go source file: package clause, imports, and top-level declarations.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SourceFile {
     pub package: Ident,
@@ -198,11 +233,17 @@ pub struct SourceFile {
     pub span: Span,
 }
 
+/// Represents a top-level declaration in a Go source file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TopLevelDecl {
+    /// Top-level function declaration.
     Func(Box<FuncDecl>),
+    /// Method declaration (function with receiver).
     Method(Box<MethodDecl>),
+    /// Type declaration group (`type ( ... )`).
     Type(Vec<TypeSpec>),
+    /// Variable declaration group (`var ( ... )`).
     Var(Vec<VarSpec>),
+    /// Constant declaration group (`const ( ... )`).
     Const(Vec<ConstSpec>),
 }

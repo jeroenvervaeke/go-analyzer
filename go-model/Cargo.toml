@@ -2,6 +2,13 @@
 name = "go-model"
 version = "0.1.0"
 edition = "2024"
+description = "Pure data types representing the complete Go grammar as Rust types"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["go", "golang", "ast", "grammar", "parser"]
+categories = ["data-structures", "parser-implementations"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

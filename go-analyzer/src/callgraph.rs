@@ -26,16 +26,17 @@ impl std::fmt::Display for Symbol {
 /// The kind of a symbol in the symbol table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SymbolKind {
+    /// A top-level `func` declaration.
     Func,
-    Method {
-        receiver_type: String,
-    },
+    /// A method declaration with the given receiver type name.
+    Method { receiver_type: String },
+    /// A type declaration (`type Foo struct{...}`, `type Bar interface{...}`, etc.).
     Type,
-    /// A named field on a struct type. Symbol name is "TypeName.FieldName".
-    Field {
-        owner_type: String,
-    },
+    /// A named field on a struct type. Symbol name is `"TypeName.FieldName"`.
+    Field { owner_type: String },
+    /// A top-level `var` declaration.
     Var,
+    /// A top-level `const` declaration.
     Const,
 }
 

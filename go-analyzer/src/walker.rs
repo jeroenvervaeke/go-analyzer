@@ -2,12 +2,16 @@ use go_model::*;
 use thiserror::Error;
 use treesitter_types_go::{self as cst, FromNode, LeafNode, Spanned};
 
+/// Error encountered while walking a tree-sitter CST into a `go_model` AST.
 #[derive(Debug, Error)]
 pub enum WalkError {
+    /// A CST node kind was not recognized or not expected in context.
     #[error("unexpected node: {kind}")]
     UnexpectedNode { kind: String },
+    /// A required child field was absent in the CST.
     #[error("missing required field: {field}")]
     MissingField { field: String },
+    /// The tree-sitter parser itself returned an error.
     #[error("tree-sitter parse error")]
     ParseError(#[from] cst::ParseError),
 }
@@ -36,6 +40,7 @@ fn text_from_span<'a>(src: &'a [u8], span: &cst::Span) -> &'a str {
 
 // --- Source File ---
 
+/// Walk a tree-sitter CST `SourceFile` node into a typed `go_model::SourceFile`.
 pub fn walk_source_file(cst_file: &cst::SourceFile<'_>, src: &[u8]) -> R<SourceFile> {
     let mut package = None;
     let mut imports = Vec::new();
