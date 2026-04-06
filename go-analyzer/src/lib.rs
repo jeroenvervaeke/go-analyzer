@@ -1,4 +1,5 @@
 pub mod applied;
+pub mod callgraph;
 pub mod changes;
 pub mod edit;
 pub mod printer;

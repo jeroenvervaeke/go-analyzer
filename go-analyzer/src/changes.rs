@@ -9,6 +9,11 @@ impl Changes {
         Self { edits: vec![] }
     }
 
+    /// Create changes from a raw list of edits.
+    pub fn from_edits(edits: Vec<Edit>) -> Self {
+        Self { edits }
+    }
+
     pub fn combine(iter: impl IntoIterator<Item = Changes>) -> Self {
         let mut edits = Vec::new();
         for c in iter {

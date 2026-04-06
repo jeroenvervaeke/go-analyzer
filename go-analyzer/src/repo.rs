@@ -38,6 +38,10 @@ impl Repo {
         Ok(Self { _root: root, files })
     }
 
+    pub fn file_count(&self) -> usize {
+        self.files.len()
+    }
+
     pub fn functions(&self) -> Selection<'_, FuncDecl> {
         let items = self
             .files
