@@ -8,6 +8,19 @@ use crate::changes::Changes;
 use crate::edit::apply_edits;
 use crate::selection::{Selection, SelectionItem};
 
+/// A loaded Go repository: parsed AST for every `.go` file under a root directory.
+///
+/// `Repo` is the main entry point for all analysis and transformation.
+///
+/// # Example
+///
+/// ```no_run
+/// # use go_analyzer::*;
+/// let repo = Repo::load(".")?;
+/// let n = repo.structs().exported().count();
+/// println!("{n} exported structs");
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct Repo {
     pub(crate) _root: PathBuf,
     pub(crate) files: HashMap<PathBuf, RepoFile>,
@@ -38,10 +51,12 @@ impl Repo {
         Ok(Self { _root: root, files })
     }
 
+    /// Return the number of successfully parsed `.go` files.
     pub fn file_count(&self) -> usize {
         self.files.len()
     }
 
+    /// Select all top-level function declarations across the repository.
     pub fn functions(&self) -> Selection<'_, FuncDecl> {
         let items = self
             .files
@@ -59,6 +74,7 @@ impl Repo {
         Selection { repo: self, items }
     }
 
+    /// Select all method declarations across the repository.
     pub fn methods(&self) -> Selection<'_, MethodDecl> {
         let items = self
             .files
@@ -76,6 +92,7 @@ impl Repo {
         Selection { repo: self, items }
     }
 
+    /// Select all type declarations (structs, interfaces, aliases, etc.) across the repository.
     pub fn types(&self) -> Selection<'_, TypeSpec> {
         let items = self
             .files
@@ -96,10 +113,12 @@ impl Repo {
         Selection { repo: self, items }
     }
 
+    /// Select all struct type declarations. Shorthand for `types().structs()`.
     pub fn structs(&self) -> Selection<'_, TypeSpec> {
         self.types().structs()
     }
 
+    /// Select all interface type declarations. Shorthand for `types().interfaces()`.
     pub fn interfaces(&self) -> Selection<'_, TypeSpec> {
         self.types().interfaces()
     }

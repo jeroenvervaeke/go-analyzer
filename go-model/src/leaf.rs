@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Span;
 
+/// Represents a Go identifier (variable, function, type, or package name).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Ident {
     pub name: String,
@@ -9,6 +10,7 @@ pub struct Ident {
 }
 
 impl Ident {
+    /// Creates a synthetic identifier with no source location.
     pub fn synthetic(name: &str) -> Self {
         Self {
             name: name.to_owned(),
@@ -16,12 +18,17 @@ impl Ident {
         }
     }
 
+    /// Returns `true` if this identifier is exported (starts with an uppercase letter per Go spec).
     pub fn is_exported(&self) -> bool {
         // Go spec: exported if first char is Unicode uppercase letter (class Lu)
         self.name.chars().next().is_some_and(|c| c.is_uppercase())
     }
 }
 
+/// Represents a Go interpreted string literal (double-quoted).
+///
+/// The `raw` field stores the original source text including quotes.
+/// Use [`StringLit::value()`] to get the unescaped content.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StringLit {
     pub raw: String,
@@ -104,6 +111,7 @@ impl StringLit {
         result
     }
 
+    /// Creates a synthetic string literal from an unescaped value, applying Go escape sequences.
     pub fn from_value(s: &str) -> Self {
         let mut escaped = String::with_capacity(s.len() + 2);
         escaped.push('"');
@@ -138,30 +146,35 @@ impl StringLit {
     }
 }
 
+/// Represents a Go raw string literal (backtick-quoted, no escape processing).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RawStringLit {
     pub raw: String,
     pub span: Span,
 }
 
+/// Represents a Go integer literal (decimal, hex, octal, or binary).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IntLit {
     pub raw: String,
     pub span: Span,
 }
 
+/// Represents a Go floating-point literal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FloatLit {
     pub raw: String,
     pub span: Span,
 }
 
+/// Represents a Go imaginary literal (e.g., `3.14i`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ImaginaryLit {
     pub raw: String,
     pub span: Span,
 }
 
+/// Represents a Go rune literal (single-quoted character).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RuneLit {
     pub raw: String,

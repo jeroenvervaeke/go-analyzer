@@ -2,6 +2,13 @@
 name = "go-analyzer"
 version = "0.1.0"
 edition = "2024"
+description = "Analyze and transform Go source code from Rust with a fluent, type-safe API"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["go", "golang", "analyzer", "refactoring", "code-generation"]
+categories = ["development-tools", "parser-implementations"]
 
 [dependencies]
 go-model = { path = "../go-model" }

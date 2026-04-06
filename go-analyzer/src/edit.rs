@@ -2,29 +2,31 @@ use std::path::PathBuf;
 
 use go_model::Span;
 
+/// A single source-level edit targeting a specific file.
 #[derive(Debug, Clone)]
 pub struct Edit {
     pub file: PathBuf,
     pub kind: EditKind,
 }
 
+/// The kind of modification to apply to source bytes.
 #[derive(Debug, Clone)]
 pub enum EditKind {
-    Replace {
-        span: Span,
-        new_text: String,
-    },
-    Delete {
-        span: Span,
-    },
+    /// Replace the byte range covered by `span` with `new_text`.
+    Replace { span: Span, new_text: String },
+    /// Delete the byte range covered by `span`, cleaning up surrounding whitespace.
+    Delete { span: Span },
+    /// Insert `new_text` immediately after `anchor_byte` (zero-width insertion).
     InsertAfter {
         anchor_byte: usize,
         new_text: String,
     },
 }
 
+/// Error returned when a set of edits cannot be applied to a source file.
 #[derive(Debug, thiserror::Error)]
 pub enum ApplyError {
+    /// Two non-insertion edits have overlapping byte ranges.
     #[error("overlapping edits at bytes {a_start}..{a_end} and {b_start}..{b_end}")]
     Overlapping {
         a_start: usize,
@@ -32,6 +34,7 @@ pub enum ApplyError {
         b_start: usize,
         b_end: usize,
     },
+    /// An edit references bytes beyond the end of the source.
     #[error("edit span {start}..{end} out of bounds for source of length {source_len}")]
     OutOfBounds {
         start: usize,

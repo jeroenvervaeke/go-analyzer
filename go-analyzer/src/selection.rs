@@ -14,42 +14,64 @@ pub struct SelectionItem<T> {
     pub file: PathBuf,
 }
 
-/// An eager, filterable collection of AST items from a `Repo`.
+/// An eager, filterable collection of AST items from a [`Repo`].
+///
+/// Built via [`Repo::functions`](crate::Repo::functions),
+/// [`Repo::methods`](crate::Repo::methods), [`Repo::types`](crate::Repo::types), etc.
+/// Chain filters to narrow the selection, then query or produce [`Changes`].
+///
+/// # Example
+///
+/// ```no_run
+/// # use go_analyzer::*;
+/// # use go_model::*;
+/// let repo = Repo::load(".")?;
+/// // Count unexported functions outside test files
+/// let n = repo.functions().unexported().excluding_tests().count();
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct Selection<'repo, T> {
     pub(crate) repo: &'repo Repo,
     pub(crate) items: Vec<SelectionItem<T>>,
 }
 
 impl<'repo, T> Selection<'repo, T> {
+    /// Retain only items that satisfy `predicate`.
     pub fn filter(mut self, predicate: impl Fn(&T) -> bool) -> Self {
         self.items.retain(|si| predicate(&si.item));
         self
     }
 
+    /// Return the number of items in the selection.
     pub fn count(&self) -> usize {
         self.items.len()
     }
 
+    /// Return a slice of all items in the selection.
     pub fn collect(&self) -> &[SelectionItem<T>] {
         &self.items
     }
 
+    /// Invoke `f` on each item in the selection.
     pub fn for_each(&self, mut f: impl FnMut(&T)) {
         for si in &self.items {
             f(&si.item);
         }
     }
 
+    /// Return `true` if the selection contains no items.
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
+    /// Return the first item, or `None` if the selection is empty.
     pub fn first(&self) -> Option<&SelectionItem<T>> {
         self.items.first()
     }
 }
 
 impl<'repo> Selection<'repo, FuncDecl> {
+    /// Keep only functions declared in files whose `package` clause matches `package`.
     pub fn in_package(self, package: &str) -> Self {
         let matching_files: Vec<PathBuf> = self
             .repo
@@ -61,14 +83,17 @@ impl<'repo> Selection<'repo, FuncDecl> {
         self.filter_by_files(&matching_files)
     }
 
+    /// Keep only exported (capitalized) functions.
     pub fn exported(self) -> Self {
         self.filter(|f| f.name.is_exported())
     }
 
+    /// Keep only unexported (lowercase) functions.
     pub fn unexported(self) -> Self {
         self.filter(|f| !f.name.is_exported())
     }
 
+    /// Exclude functions defined in `_test.go` files.
     pub fn excluding_tests(mut self) -> Self {
         self.items.retain(|si| {
             !si.file
@@ -79,10 +104,12 @@ impl<'repo> Selection<'repo, FuncDecl> {
         self
     }
 
+    /// Keep only functions whose name exactly matches `name`.
     pub fn named(self, name: &str) -> Self {
         self.filter(|f| f.name.name == name)
     }
 
+    /// Produce [`Changes`] that delete all selected functions from their source files.
     pub fn delete(self) -> Changes {
         let edits = self
             .items
@@ -96,6 +123,7 @@ impl<'repo> Selection<'repo, FuncDecl> {
         Changes { edits }
     }
 
+    /// Produce [`Changes`] that rename all selected functions to `new_name`.
     pub fn rename(self, new_name: &str) -> Changes {
         let edits = self
             .items
@@ -112,6 +140,7 @@ impl<'repo> Selection<'repo, FuncDecl> {
         Changes { edits }
     }
 
+    /// Produce [`Changes`] that replace the body of all selected functions with `body`.
     pub fn replace_body(self, body: Block) -> Changes {
         let edits = self
             .items
@@ -138,6 +167,7 @@ impl<'repo> Selection<'repo, FuncDecl> {
 }
 
 impl<'repo> Selection<'repo, MethodDecl> {
+    /// Keep only methods declared in files whose `package` clause matches `package`.
     pub fn in_package(self, package: &str) -> Self {
         let matching_files: Vec<PathBuf> = self
             .repo
@@ -149,14 +179,17 @@ impl<'repo> Selection<'repo, MethodDecl> {
         self.filter_by_files(&matching_files)
     }
 
+    /// Keep only exported (capitalized) methods.
     pub fn exported(self) -> Self {
         self.filter(|m| m.name.is_exported())
     }
 
+    /// Keep only unexported (lowercase) methods.
     pub fn unexported(self) -> Self {
         self.filter(|m| !m.name.is_exported())
     }
 
+    /// Exclude methods defined in `_test.go` files.
     pub fn excluding_tests(mut self) -> Self {
         self.items.retain(|si| {
             !si.file
@@ -167,14 +200,17 @@ impl<'repo> Selection<'repo, MethodDecl> {
         self
     }
 
+    /// Keep only methods whose name exactly matches `name`.
     pub fn named(self, name: &str) -> Self {
         self.filter(|m| m.name.name == name)
     }
 
+    /// Keep only methods whose receiver type (ignoring pointer indirection) matches `type_name`.
     pub fn on_type(self, type_name: &str) -> Self {
         self.filter(|m| receiver_type_name(&m.receiver) == Some(type_name))
     }
 
+    /// Produce [`Changes`] that delete all selected methods from their source files.
     pub fn delete(self) -> Changes {
         let edits = self
             .items
@@ -188,6 +224,7 @@ impl<'repo> Selection<'repo, MethodDecl> {
         Changes { edits }
     }
 
+    /// Produce [`Changes`] that rename all selected methods to `new_name`.
     pub fn rename(self, new_name: &str) -> Changes {
         let edits = self
             .items
@@ -204,6 +241,7 @@ impl<'repo> Selection<'repo, MethodDecl> {
         Changes { edits }
     }
 
+    /// Produce [`Changes`] that replace the body of all selected methods with `body`.
     pub fn replace_body(self, body: Block) -> Changes {
         let edits = self
             .items
@@ -229,6 +267,7 @@ impl<'repo> Selection<'repo, MethodDecl> {
 }
 
 impl<'repo> Selection<'repo, TypeSpec> {
+    /// Keep only types declared in files whose `package` clause matches `package`.
     pub fn in_package(self, package: &str) -> Self {
         let matching_files: Vec<PathBuf> = self
             .repo
@@ -240,14 +279,17 @@ impl<'repo> Selection<'repo, TypeSpec> {
         self.filter_by_files(&matching_files)
     }
 
+    /// Keep only exported (capitalized) types.
     pub fn exported(self) -> Self {
         self.filter(|t| t.name().is_exported())
     }
 
+    /// Keep only unexported (lowercase) types.
     pub fn unexported(self) -> Self {
         self.filter(|t| !t.name().is_exported())
     }
 
+    /// Exclude types defined in `_test.go` files.
     pub fn excluding_tests(mut self) -> Self {
         self.items.retain(|si| {
             !si.file
@@ -258,14 +300,17 @@ impl<'repo> Selection<'repo, TypeSpec> {
         self
     }
 
+    /// Keep only types whose name exactly matches `name`.
     pub fn named(self, name: &str) -> Self {
         self.filter(|t| t.name().name == name)
     }
 
+    /// Keep only struct types, filtering out interfaces, aliases, etc.
     pub fn structs(self) -> Self {
         self.filter(|t| t.is_struct())
     }
 
+    /// Keep only interface types, filtering out structs, aliases, etc.
     pub fn interfaces(self) -> Self {
         self.filter(|t| t.is_interface())
     }
@@ -319,6 +364,7 @@ impl<'repo> Selection<'repo, TypeSpec> {
         }
     }
 
+    /// Produce [`Changes`] that delete all selected types from their source files.
     pub fn delete(self) -> Changes {
         let edits = self
             .items
@@ -334,6 +380,7 @@ impl<'repo> Selection<'repo, TypeSpec> {
         Changes { edits }
     }
 
+    /// Produce [`Changes`] that rename all selected types to `new_name`.
     pub fn rename(self, new_name: &str) -> Changes {
         let edits = self
             .items
@@ -424,8 +471,27 @@ impl<'repo> Selection<'repo, TypeSpec> {
     }
 }
 
-/// `MethodEntry` represents a method that may or may not exist on a type.
-/// Used for fluent add-or-modify patterns.
+/// A method that may or may not exist on a type.
+///
+/// Created by [`Selection<TypeSpec>::method`] for fluent add-or-modify patterns.
+///
+/// # Example
+///
+/// ```no_run
+/// # use go_analyzer::*;
+/// # use go_model::*;
+/// let repo = Repo::load(".")?;
+/// let changes = repo.structs().exported().method("String").or_add(|ts| {
+///     build::method(
+///         build::pointer_receiver("s", &ts.name().name),
+///         "String",
+///         vec![],
+///         vec![build::unnamed_param(build::named("string"))],
+///         build::block(vec![build::ret(vec![build::string("todo")])]),
+///     )
+/// });
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct MethodEntry {
     pub type_spec: TypeSpec,

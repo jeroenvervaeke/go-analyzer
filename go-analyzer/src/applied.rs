@@ -3,12 +3,30 @@ use std::path::{Path, PathBuf};
 
 use crate::repo::Repo;
 
+/// The result of applying [`Changes`](crate::Changes) to a [`Repo`].
+///
+/// Holds the modified source in memory. Use [`preview`](Self::preview) to print
+/// a unified diff, [`dry_run`](Self::dry_run) to inspect changes, or
+/// [`commit`](Self::commit) to write files to disk.
+///
+/// # Example
+///
+/// ```no_run
+/// # use go_analyzer::*;
+/// # use go_model::*;
+/// let repo = Repo::load(".")?;
+/// let changes = repo.functions().named("Deprecated").delete();
+/// let summary = repo.apply(changes).preview().commit()?;
+/// println!("modified {} files", summary.files_modified);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct Applied<'repo> {
     pub(crate) repo: &'repo Repo,
     pub(crate) results: HashMap<PathBuf, Vec<u8>>,
     pub(crate) edit_count: usize,
 }
 
+/// Summary returned by [`Applied::commit`] after writing changes to disk.
 pub struct CommitSummary {
     pub files_modified: usize,
     pub edits_applied: usize,
@@ -45,6 +63,7 @@ impl<'repo> Applied<'repo> {
         self.results.keys().map(|p| p.as_path()).collect()
     }
 
+    /// Return the total number of individual edits that were applied.
     pub fn edit_count(&self) -> usize {
         self.edit_count
     }

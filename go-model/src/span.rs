@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+/// Represents a source location range within a Go file.
+///
+/// Use [`Span::synthetic()`] for generated nodes that have no real source location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Span {
     pub start_byte: usize,
@@ -25,6 +28,7 @@ impl Span {
         }
     }
 
+    /// Returns `true` if this span was created by [`Span::synthetic()`].
     pub fn is_synthetic(&self) -> bool {
         self.start_byte == 0 && self.end_byte == 0
     }
