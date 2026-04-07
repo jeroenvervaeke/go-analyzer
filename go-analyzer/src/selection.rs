@@ -665,7 +665,7 @@ impl<'repo, T> Selection<'repo, T> {
 /// Returns a list of (method_name, FuncType) pairs, or None if the interface
 /// is not found.
 fn find_interface_methods(repo: &Repo, interface_name: &str) -> Option<Vec<(String, FuncType)>> {
-    for (_, rf) in &repo.files {
+    for rf in repo.files.values() {
         for decl in &rf.ast.decls {
             let TopLevelDecl::Type(specs) = decl else {
                 continue;
@@ -698,7 +698,7 @@ fn find_interface_methods(repo: &Repo, interface_name: &str) -> Option<Vec<(Stri
 /// Returns a map from type name → list of (method_name, FuncType).
 fn collect_all_methods(repo: &Repo) -> HashMap<&str, Vec<(&str, &FuncType)>> {
     let mut result: HashMap<&str, Vec<(&str, &FuncType)>> = HashMap::new();
-    for (_, rf) in &repo.files {
+    for rf in repo.files.values() {
         for decl in &rf.ast.decls {
             let TopLevelDecl::Method(m) = decl else {
                 continue;

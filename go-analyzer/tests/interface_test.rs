@@ -14,7 +14,7 @@ fn test_implementing_stringer() {
     let stringers = repo.structs().implementing("Stringer");
     let names: Vec<_> = stringers
         .collect()
-        .into_iter()
+        .iter()
         .map(|si| si.item.name().name.clone())
         .collect();
 
@@ -48,7 +48,7 @@ fn test_implementing_starter() {
     let starters = repo.structs().implementing("Starter");
     let names: Vec<_> = starters
         .collect()
-        .into_iter()
+        .iter()
         .map(|si| si.item.name().name.clone())
         .collect();
 
@@ -132,7 +132,7 @@ type Empty struct{}
     let rw = repo.structs().implementing("ReadWriter");
     let names: Vec<_> = rw
         .collect()
-        .into_iter()
+        .iter()
         .map(|si| si.item.name().name.clone())
         .collect();
 
@@ -183,7 +183,7 @@ func (s *PartialStore) Set(key string, value string) error { return nil }
     let stores = repo.structs().implementing("Storage");
     let names: Vec<_> = stores
         .collect()
-        .into_iter()
+        .iter()
         .map(|si| si.item.name().name.clone())
         .collect();
 
