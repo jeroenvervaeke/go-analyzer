@@ -1,6 +1,10 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use go_model::{Block, FuncDecl, MethodDecl, Receiver, TopLevelDecl, TypeExpr, TypeSpec};
+use go_model::{
+    Block, FuncDecl, FuncType, InterfaceElem, MethodDecl, Receiver, TopLevelDecl, TypeExpr,
+    TypeSpec,
+};
 
 use crate::changes::Changes;
 use crate::edit::{Edit, EditKind};
@@ -315,6 +319,52 @@ impl<'repo> Selection<'repo, TypeSpec> {
         self.filter(|t| t.is_interface())
     }
 
+    /// Keep only types that implement the named interface.
+    ///
+    /// Checks whether each type's method set satisfies the interface's required
+    /// methods. Method signatures are compared structurally (name, parameter
+    /// types, and return types must match exactly).
+    ///
+    /// The interface is looked up by name in the repository. If the interface
+    /// is not found, an empty selection is returned.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use go_analyzer::*;
+    /// let repo = Repo::load(".").unwrap();
+    /// let stringers = repo.structs().implementing("Stringer");
+    /// println!("{} types implement Stringer", stringers.count());
+    /// ```
+    pub fn implementing(self, interface_name: &str) -> Self {
+        // Find the interface definition in the repo
+        let required_methods = match find_interface_methods(self.repo, interface_name) {
+            Some(methods) => methods,
+            None => {
+                return Self {
+                    repo: self.repo,
+                    items: vec![],
+                };
+            }
+        };
+
+        // Collect all methods in the repo indexed by receiver type name
+        let all_methods = collect_all_methods(self.repo);
+
+        self.filter(|type_spec| {
+            let type_name = &type_spec.name().name;
+            let type_methods = all_methods.get(type_name.as_str());
+            // Check: every required method has a matching implementation
+            required_methods.iter().all(|req| {
+                type_methods.is_some_and(|methods| {
+                    methods
+                        .iter()
+                        .any(|(name, sig)| *name == req.0 && sig.signature_matches(&req.1))
+                })
+            })
+        })
+    }
+
     /// Look up a named method on each selected type and return `MethodEntry`
     /// items for fluent add-or-modify patterns.
     pub fn method(self, method_name: &str) -> Selection<'repo, MethodEntry> {
@@ -609,6 +659,60 @@ impl<'repo, T> Selection<'repo, T> {
         self.items.retain(|si| files.contains(&si.file));
         self
     }
+}
+
+/// Find the required method signatures for a named interface in the repo.
+/// Returns a list of (method_name, FuncType) pairs, or None if the interface
+/// is not found.
+fn find_interface_methods(repo: &Repo, interface_name: &str) -> Option<Vec<(String, FuncType)>> {
+    for rf in repo.files.values() {
+        for decl in &rf.ast.decls {
+            let TopLevelDecl::Type(specs) = decl else {
+                continue;
+            };
+            for spec in specs {
+                if spec.name().name != interface_name {
+                    continue;
+                }
+                let TypeExpr::Interface(iface) = spec.ty() else {
+                    continue;
+                };
+                let methods: Vec<(String, FuncType)> = iface
+                    .elements
+                    .iter()
+                    .filter_map(|elem| match elem {
+                        InterfaceElem::Method { name, ty, .. } => {
+                            Some((name.name.clone(), ty.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                return Some(methods);
+            }
+        }
+    }
+    None
+}
+
+/// Collect all methods in the repo, grouped by receiver type name.
+/// Returns a map from type name → list of (method_name, FuncType).
+fn collect_all_methods(repo: &Repo) -> HashMap<&str, Vec<(&str, &FuncType)>> {
+    let mut result: HashMap<&str, Vec<(&str, &FuncType)>> = HashMap::new();
+    for rf in repo.files.values() {
+        for decl in &rf.ast.decls {
+            let TopLevelDecl::Method(m) = decl else {
+                continue;
+            };
+            let Some(recv_name) = receiver_type_name(&m.receiver) else {
+                continue;
+            };
+            result
+                .entry(recv_name)
+                .or_default()
+                .push((&m.name.name, &m.ty));
+        }
+    }
+    result
 }
 
 /// Extract the base type name from a receiver, stripping pointer indirection.

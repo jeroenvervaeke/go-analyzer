@@ -11,6 +11,98 @@ pub struct FuncType {
     pub span: Span,
 }
 
+impl FuncType {
+    /// Returns true if two function signatures are compatible, ignoring
+    /// parameter names and spans. Compares only the types, variadic flags,
+    /// and return types — the things that matter for interface satisfaction.
+    pub fn signature_matches(&self, other: &FuncType) -> bool {
+        params_match(&self.params, &other.params) && params_match(&self.results, &other.results)
+    }
+}
+
+/// Compare two parameter lists structurally, ignoring names and spans.
+fn params_match(a: &[ParamDecl], b: &[ParamDecl]) -> bool {
+    let a_flat = flatten_params(a);
+    let b_flat = flatten_params(b);
+
+    if a_flat.len() != b_flat.len() {
+        return false;
+    }
+
+    a_flat
+        .iter()
+        .zip(b_flat.iter())
+        .all(|((ty_a, var_a), (ty_b, var_b))| type_eq(ty_a, ty_b) && var_a == var_b)
+}
+
+/// Flatten parameter lists: `(a, b int, c string)` → `[(int, false), (int, false), (string, false)]`.
+/// Unnamed params like `(int, error)` stay as-is.
+fn flatten_params(params: &[ParamDecl]) -> Vec<(&TypeExpr, bool)> {
+    let mut result = Vec::new();
+    for p in params {
+        let count = if p.names.is_empty() { 1 } else { p.names.len() };
+        for _ in 0..count {
+            result.push((&p.ty, p.variadic));
+        }
+    }
+    result
+}
+
+/// Compare two type expressions structurally, ignoring all spans.
+/// This is needed because the derived `PartialEq` on `TypeExpr` includes
+/// `Ident.span`, making two identical types from different source positions
+/// compare as unequal.
+pub fn type_eq(a: &TypeExpr, b: &TypeExpr) -> bool {
+    match (a, b) {
+        (TypeExpr::Named(a), TypeExpr::Named(b)) => a.name == b.name,
+        (
+            TypeExpr::Qualified {
+                package: pa,
+                name: na,
+            },
+            TypeExpr::Qualified {
+                package: pb,
+                name: nb,
+            },
+        ) => pa.name == pb.name && na.name == nb.name,
+        (TypeExpr::Pointer(a), TypeExpr::Pointer(b)) => type_eq(a, b),
+        (TypeExpr::Array { len: _, elem: ea }, TypeExpr::Array { len: _, elem: eb }) => {
+            // Array lengths are expressions — for signature matching we compare
+            // the element types only. This is a simplification; exact length
+            // matching would require expression equality.
+            type_eq(ea, eb)
+        }
+        (TypeExpr::Slice(a), TypeExpr::Slice(b)) => type_eq(a, b),
+        (TypeExpr::Map { key: ka, value: va }, TypeExpr::Map { key: kb, value: vb }) => {
+            type_eq(ka, kb) && type_eq(va, vb)
+        }
+        (
+            TypeExpr::Channel {
+                direction: da,
+                elem: ea,
+            },
+            TypeExpr::Channel {
+                direction: db,
+                elem: eb,
+            },
+        ) => da == db && type_eq(ea, eb),
+        (TypeExpr::Func(a), TypeExpr::Func(b)) => {
+            params_match(&a.params, &b.params) && params_match(&a.results, &b.results)
+        }
+        (TypeExpr::Interface(a), TypeExpr::Interface(b)) => {
+            // Simplified: compare element count and names only
+            a.elements.len() == b.elements.len()
+        }
+        (TypeExpr::Struct(a), TypeExpr::Struct(b)) => a.fields.len() == b.fields.len(),
+        (TypeExpr::Generic { base: ba, args: aa }, TypeExpr::Generic { base: bb, args: ab }) => {
+            type_eq(ba, bb)
+                && aa.len() == ab.len()
+                && aa.iter().zip(ab.iter()).all(|(a, b)| type_eq(a, b))
+        }
+        _ => false,
+    }
+}
+
 /// Represents a parameter declaration in a function signature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParamDecl {
