@@ -56,6 +56,16 @@ impl Repo {
         self.files.len()
     }
 
+    /// Return the root directory this repo was loaded from.
+    pub fn root(&self) -> &Path {
+        &self._root
+    }
+
+    /// Return the package name for a file path, or None if the file isn't in the repo.
+    pub fn package_for_file(&self, file: &Path) -> Option<&str> {
+        self.files.get(file).map(|rf| rf.ast.package.name.as_str())
+    }
+
     /// Select all top-level function declarations across the repository.
     pub fn functions(&self) -> Selection<'_, FuncDecl> {
         let items = self

@@ -1,6 +1,6 @@
 use go_model::*;
 
-pub(crate) struct Printer;
+pub struct Printer;
 
 fn indent_str(depth: usize) -> String {
     "\t".repeat(depth)
