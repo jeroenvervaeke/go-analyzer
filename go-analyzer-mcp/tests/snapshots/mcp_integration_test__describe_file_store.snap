@@ -1,0 +1,169 @@
+---
+source: go-analyzer-mcp/tests/mcp_integration_test.rs
+expression: normalized
+---
+{
+  "constants": [
+    {
+      "exported": true,
+      "line": 37,
+      "name": "CloudServiceURL",
+      "value": "\"https://cloud.mongodb.com/\""
+    },
+    {
+      "exported": true,
+      "line": 38,
+      "name": "CloudGovServiceURL",
+      "value": "\"https://cloud.mongodbgov.com/\""
+    }
+  ],
+  "file": "<REPO>/internal/store/store.go",
+  "functions": [
+    {
+      "exported": true,
+      "line": 73,
+      "name": "Options",
+      "signature": "func Options(opts ...Option) Option"
+    },
+    {
+      "exported": true,
+      "line": 85,
+      "name": "Service",
+      "signature": "func Service(service string) Option"
+    },
+    {
+      "exported": true,
+      "line": 94,
+      "name": "WithBaseURL",
+      "signature": "func WithBaseURL(configURL string) Option"
+    },
+    {
+      "exported": true,
+      "line": 101,
+      "name": "Telemetry",
+      "signature": "func Telemetry() Option"
+    },
+    {
+      "exported": true,
+      "line": 119,
+      "name": "WithAuthentication",
+      "signature": "func WithAuthentication() Option"
+    },
+    {
+      "exported": true,
+      "line": 131,
+      "name": "WithContext",
+      "signature": "func WithContext(ctx context.Context) Option"
+    },
+    {
+      "exported": true,
+      "line": 230,
+      "name": "AuthenticatedPreset",
+      "signature": "func AuthenticatedPreset(c AuthenticatedConfig) Option"
+    },
+    {
+      "exported": false,
+      "line": 238,
+      "name": "baseURLOption",
+      "signature": "func baseURLOption(c ServiceGetter) Option"
+    },
+    {
+      "exported": true,
+      "line": 248,
+      "name": "UnauthenticatedPreset",
+      "signature": "func UnauthenticatedPreset(c ServiceGetter) Option"
+    },
+    {
+      "exported": true,
+      "line": 268,
+      "name": "New",
+      "signature": "func New(opts ...Option) (*Store, error)"
+    }
+  ],
+  "imports": [
+    "context",
+    "errors",
+    "fmt",
+    "net/http",
+    "strings",
+    "github.com/mongodb/atlas-cli-core/config",
+    "github.com/mongodb/atlas-cli-core/transport",
+    "github.com/mongodb/mongodb-atlas-cli/atlascli/internal/log",
+    "github.com/mongodb/mongodb-atlas-cli/atlascli/internal/version",
+    "go.mongodb.org/atlas-sdk/v20240530005/admin",
+    "go.mongodb.org/atlas-sdk/v20250312012/admin",
+    "go.mongodb.org/atlas/auth",
+    "go.mongodb.org/atlas/mongodbatlas"
+  ],
+  "methods": [
+    {
+      "exported": false,
+      "line": 56,
+      "name": "transport",
+      "receiver": "s *Store",
+      "signature": "func (s *Store) transport() *http.Transport"
+    },
+    {
+      "exported": false,
+      "line": 139,
+      "name": "setAtlasClient",
+      "receiver": "s *Store",
+      "signature": "func (s *Store) setAtlasClient() error"
+    },
+    {
+      "exported": false,
+      "line": 183,
+      "name": "createV2Client",
+      "receiver": "s *Store",
+      "signature": "func (s *Store) createV2Client(client *http.Client) error"
+    },
+    {
+      "exported": false,
+      "line": 200,
+      "name": "createClustersClient",
+      "receiver": "s *Store",
+      "signature": "func (s *Store) createClustersClient(client *http.Client) error"
+    }
+  ],
+  "package": "store",
+  "types": [
+    {
+      "exported": true,
+      "kind": "struct",
+      "line": 43,
+      "name": "Store"
+    },
+    {
+      "exported": true,
+      "kind": "type",
+      "line": 69,
+      "name": "Option"
+    },
+    {
+      "exported": true,
+      "kind": "interface",
+      "line": 109,
+      "name": "CredentialsGetter"
+    },
+    {
+      "exported": true,
+      "kind": "interface",
+      "line": 218,
+      "name": "ServiceGetter"
+    },
+    {
+      "exported": true,
+      "kind": "interface",
+      "line": 224,
+      "name": "AuthenticatedConfig"
+    }
+  ],
+  "variables": [
+    {
+      "exported": false,
+      "line": 41,
+      "name": "errUnsupportedService",
+      "value": "errors.New(\"unsupported service\")"
+    }
+  ]
+}

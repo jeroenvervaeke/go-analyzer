@@ -1,5 +1,5 @@
 [workspace]
-members = ["go-model", "go-analyzer"]
+members = ["go-model", "go-analyzer", "go-analyzer-mcp"]
 resolver = "2"
 
 [workspace.package]

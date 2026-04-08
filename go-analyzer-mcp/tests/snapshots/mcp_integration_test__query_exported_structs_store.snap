@@ -1,0 +1,41 @@
+---
+source: go-analyzer-mcp/tests/mcp_integration_test.rs
+expression: summary
+---
+[
+  {
+    "exported": true,
+    "kind": "struct",
+    "line": 23,
+    "name": "AccessLogOptions",
+    "signature": "type AccessLogOptions struct {\n\tStart string\n\tEnd string\n\tNLogs int\n\tIPAddress string\n\tAuthResult *bool\n}"
+  },
+  {
+    "exported": true,
+    "kind": "struct",
+    "line": 27,
+    "name": "ContainersListOptions",
+    "signature": "type ContainersListOptions struct {\n\tListOptions\n\tProviderName string\n}"
+  },
+  {
+    "exported": true,
+    "kind": "struct",
+    "line": 21,
+    "name": "ListOptions",
+    "signature": "type ListOptions struct {\n\tPageNum int\n\tItemsPerPage int\n\tIncludeCount bool\n}"
+  },
+  {
+    "exported": true,
+    "kind": "struct",
+    "line": 114,
+    "name": "MDBVersionListOptions",
+    "signature": "type MDBVersionListOptions struct {\n\tListOptions\n\tCloudProvider *string\n\tInstanceSize *string\n\tDefaultStatus *string\n}"
+  },
+  {
+    "exported": true,
+    "kind": "struct",
+    "line": 43,
+    "name": "Store",
+    "signature": "type Store struct {\n\tservice string\n\tbaseURL string\n\ttelemetry bool\n\thttpClient *http.Client\n\tclient *atlas.Client\n\tclientv2 *atlasv2.APIClient\n\tclientClusters *atlasClustersPinned.APIClient\n\tctx context.Context\n}"
+  }
+]

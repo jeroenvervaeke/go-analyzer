@@ -1,0 +1,15 @@
+---
+source: go-analyzer-mcp/tests/mcp_integration_test.rs
+expression: diff
+---
+--- a/<REPO>/internal/store/store.go
++++ b/<REPO>/internal/store/store.go
+@@ -265,7 +265,7 @@
+ //
+ //	// get a new Store for the private API based on a Config interface
+ //	store := store.New(PrivateAuthenticatedPreset(config))
+-func New(opts ...Option) (*Store, error) {
++func NewRenamed(opts ...Option) (*Store, error) {
+ 	store := new(Store)
+ 
+ 	// apply the list of options to Server

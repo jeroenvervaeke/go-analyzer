@@ -1,0 +1,26 @@
+[package]
+name = "go-analyzer-mcp"
+version = "0.1.0"
+edition = "2024"
+description = "MCP server for Go code analysis and transformation"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+go-analyzer = { path = "../go-analyzer" }
+go-model = { path = "../go-model" }
+rmcp = { version = "1", features = ["server", "transport-io"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1"
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+similar = "2"
+
+[dev-dependencies]
+tempfile = "3"
+insta = { version = "1", features = ["json", "redactions"] }
+rmcp = { version = "1", features = ["client", "transport-child-process", "transport-io"] }
+tokio = { version = "1", features = ["full"] }

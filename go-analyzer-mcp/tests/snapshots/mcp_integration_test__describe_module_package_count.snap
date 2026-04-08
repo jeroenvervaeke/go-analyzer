@@ -1,0 +1,5 @@
+---
+source: go-analyzer-mcp/tests/mcp_integration_test.rs
+expression: packages.len()
+---
+92

@@ -1,0 +1,22 @@
+---
+source: go-analyzer-mcp/tests/mcp_integration_test.rs
+expression: summary
+---
+[
+  {
+    "line": 224,
+    "name": "AuthenticatedConfig"
+  },
+  {
+    "line": 25,
+    "name": "ClusterDescriber"
+  },
+  {
+    "line": 109,
+    "name": "CredentialsGetter"
+  },
+  {
+    "line": 218,
+    "name": "ServiceGetter"
+  }
+]
