@@ -11,12 +11,13 @@ go-analyzer parses Go repositories into a complete, typed AST, then lets you que
 
 ## Architecture
 
-The project is a two-crate workspace:
+The project is a three-crate workspace:
 
 | Crate | Purpose |
 |---|---|
 | **`go-model`** | Pure data types representing the full Go grammar. 1:1 structural mapping, fully serializable with serde, zero logic, zero dependencies on tree-sitter. |
 | **`go-analyzer`** | Walker (tree-sitter to model), printer (model to source), resolver (cross-file imports), edit engine, call graph analysis, and the fluent query/change API. |
+| **`go-analyzer-mcp`** | MCP server exposing go-analyzer capabilities to LLMs over stdio. See [MCP Server](#mcp-server) below. |
 
 ## Quick start
 
@@ -154,6 +155,70 @@ cargo run --bin go-analyzer -- --path ./my-go-repo --dry-run delete-method Depre
 # Filter to a specific package
 cargo run --bin go-analyzer -- --path ./my-go-repo --package main functions
 ```
+
+## MCP Server
+
+`go-analyzer-mcp` is an [MCP](https://modelcontextprotocol.io/) server that lets LLMs query and edit Go code through structured tool calls over stdio. It wraps the full go-analyzer API so LLMs get type-aware code intelligence instead of relying on text search and regex.
+
+### Tools
+
+| Tool | Description |
+|---|---|
+| `describe_module` | Package tree with summary counts. Depth-limited for progressive exploration. |
+| `describe_file` | Structural overview of a file: types, functions, methods, constants with line numbers and doc comments. |
+| `query` | Find/filter declarations using a `select` + `filters` pipeline (same as the Rust fluent API). |
+| `call_graph` | Callers, callees, reachability, dead code detection. Returns both structured data and a text tree. |
+| `edit` | Rename, delete, replace body, add/remove struct fields. Auto-applies and returns a unified diff unless `dry_run: true`. |
+
+### Setup
+
+Build the server:
+
+```bash
+cargo build --release -p go-analyzer-mcp
+```
+
+Add to your MCP client config (e.g. Claude Code `~/.claude.json`):
+
+```json
+{
+  "mcpServers": {
+    "go-analyzer": {
+      "command": "/path/to/go-analyzer-mcp",
+      "args": ["--path", "/path/to/your/go/project"]
+    }
+  }
+}
+```
+
+If `--path` is omitted, it defaults to the current working directory.
+
+### Example: query tool
+
+```json
+{
+  "select": "methods",
+  "filters": [
+    {"on_type": "Server"},
+    {"exported": true}
+  ]
+}
+```
+
+Returns items with absolute file paths, line numbers, full Go signatures, and doc comments — everything an LLM needs to locate and understand the code without guessing.
+
+### Example: edit tool (dry run)
+
+```json
+{
+  "select": "functions",
+  "filters": [{"named": "OldName"}],
+  "action": {"rename": "NewName"},
+  "dry_run": true
+}
+```
+
+Returns the unified diff without modifying files. Remove `dry_run` to apply.
 
 ## How it works
 
